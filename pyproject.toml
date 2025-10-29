@@ -1,0 +1,28 @@
+[project]
+name = "meteo"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Panos Mavrogiorgos",email = "pmav99@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "xarray[full]",
+    "cyclopts",
+    "logfmter",
+    "ecmwf-api-client",
+    "metview",
+    "platformdirs"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.group.dev.dependencies]
+ipython = "*"
+
+[tool.poetry.scripts]
+meteo = "meteo.__main__:main"
