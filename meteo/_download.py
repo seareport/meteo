@@ -3,7 +3,6 @@ from __future__ import annotations
 import calendar
 import logging
 import pathlib
-import sys
 
 from ._constants import ECMWF_VARIABLE_CODES
 from ._literals import L_Grids

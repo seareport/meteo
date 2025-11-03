@@ -13,9 +13,12 @@ dependencies = [
     "logfmter",
     "ecmwf-api-client",
     "metview",
-    "platformdirs"
+    "platformdirs",
 ]
 
+[project.optional-dependencies]
+hycom = ["seawater", "netcdf4"]
+complete = ["seawater", "netcdf4"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

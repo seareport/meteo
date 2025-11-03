@@ -2,7 +2,7 @@ from typing import get_args
 
 from ._literals import L_ECMWF_Variables
 
-
+# ECMWF
 SUPPORTED_ECMWF_VARIABLES: tuple[L_ECMWF_Variables] = get_args(L_ECMWF_Variables)
 
 ECMWF_VARIABLE_CODES = {
@@ -21,3 +21,12 @@ ECMWF_VARIABLE_CODES = {
 for key in ECMWF_VARIABLE_CODES:
     assert key in SUPPORTED_ECMWF_VARIABLES, f"{key} not in: {SUPPORTED_ECMWF_VARIABLES}"
 
+# HYCOM
+HYCOM_MAX_DEPTH_INDEX = 39
+POTENTIAL_TEMP_CORRECTION = 1.00024
+
+class Bbox: 
+    xmin = -180
+    xmax = 180
+    ymin = -90
+    ymax = 90

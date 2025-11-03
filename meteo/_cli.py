@@ -13,6 +13,7 @@ from cyclopts.types import ResolvedDirectory
 from cyclopts.types import ResolvedExistingDirectory
 
 from ._literals import L_Months
+from ._literals import L_Days
 from ._literals import L_ECMWF_Variables
 from ._utils import get_grib_path
 
@@ -22,6 +23,7 @@ _HOSTNAME = platform.node()
 # We will use CONSTANTS after we initialize them
 _default_cache_dir: pathlib.Path
 _default_ecmwf_operational_dir: pathlib.Path
+_default_hycom_operational_dir: pathlib.Path
 
 if "meluxina" in _HOSTNAME:
     _GROUP_ID = os.getgroups()[-1]
@@ -29,11 +31,14 @@ if "meluxina" in _HOSTNAME:
     _SCRATCH_DIR = pathlib.Path(f"/project/scratch/p{_GROUP_ID}")
     _default_cache_dir = _SCRATCH_DIR / "cache"
     _default_ecmwf_operational_dir = _PROJECT_DIR / "02_meteo/ecmwf/operational/"
+    _default_hycom_operational_dir = _PROJECT_DIR / "02_meteo/hycom/"
 else:
     _default_cache_dir = platformdirs.user_cache_path()
     _default_ecmwf_operational_dir = pathlib.Path(os.environ.get("ECMWF_OPERATIONAL_DIR", "."))
+    _default_hycom_operational_dir = pathlib.Path(os.environ.get("HYCOM_DIR", "."))
 
 _DEFAULT_ECMWF_OPERATIONAL_DIR = _default_ecmwf_operational_dir
+_DEFAULT_HYCOM_OPERATIONAL_DIR = _default_hycom_operational_dir
 _DEFAULT_CACHE_DIR = _default_cache_dir
 _DEFAULT_CACHE_MIR_DIR = _DEFAULT_CACHE_DIR / "mir"
 _DEFAULT_CACHE_METVIEW_DIR = _DEFAULT_CACHE_DIR / "metview"
@@ -166,9 +171,48 @@ def cli_convert_era5_to_sflux():
     raise NotImplementedError
 
 
-def cli_hycom():
-    """ Download HYCOM data """
-    raise NotImplementedError
+def cli_hycom(
+    year: Annotated[int, _YEAR_VALIDATOR],
+    month: L_Months,
+    day: Annotated[L_Days, Parameter(show_choices = False)],
+    output_dir: ResolvedDirectory = _DEFAULT_HYCOM_OPERATIONAL_DIR,
+):
+    """
+    Download HYCOM data.
+
+    Downloads high-resolution (~9km) ECMWF operational forecast data in GRIB format
+    for a specified month. Requires ECMWF API credentials in `~/.ecmwfapirc`.
+
+    Parameters
+    ----------
+    year : int
+        Year to download (must be >= 1900).
+    month : int
+        Month to download (1-12).
+    day : int
+        Day to download (1-31).
+    rnday : int
+        The number of days/timestep in the file (HYCOM is a daily product)
+        Default is 1
+    output_dir : Path, default: system-specific
+        Output directory for downloaded files. Data is saved to a 'HYCOM'
+        subdirectory within this path. Defaults to a platform-specific location.
+
+    Notes
+    -----
+    Output files follow a standardized naming convention within the HYCOM subdirectory.
+    For example, downloading mean sea level pressure for 11 January 2024 creates:
+    ``{output_dir}/HYCOM/hycom_20240111.nc``
+    """
+    from meteo._hycom import download_hycom
+
+    download_hycom(
+        year=year,
+        month=month,
+        day=day,
+        rnday=1,
+        output_path=output_dir / "HYCOM",
+    )
 
 
 def cli_cmems():
