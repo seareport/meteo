@@ -8,27 +8,21 @@ import sys
 import logfmter
 from cyclopts import App
 
-main_app = App()
 download_app = App(name="download", help="Download data from the internet")
-convert_app = App(name="convert", help="Convert data to other formats")
-
+download_app.command("meteo._cli:cli_cmems", name="cmems")
 download_app.command("meteo._cli:cli_download_era5", name="era5")
 download_app.command("meteo._cli:cli_download_o1280", name="o1280")
+download_app.command("meteo._cli:cli_hycom", name="hycom")
+
+convert_app = App(name="convert", help="Convert data to other formats")
 convert_app.command("meteo._cli:cli_convert_era5_to_sflux", name="era5-to-sflux")
-convert_app.command("meteo._cli:cli_convert_o1280_to_f1280", name="to-f1280")
 convert_app.command("meteo._cli:cli_convert_f1280_to_sflux", name="to-sflux")
+convert_app.command("meteo._cli:cli_convert_o1280_to_f1280", name="to-f1280")
 
-main_app.command(download_app)
+main_app = App()
 main_app.command(convert_app)
+main_app.command(download_app)
 
-#@main_app.command
-#def hello():
-#    print("Hello World!")
-#
-#@main_app.command
-#def static(region: str = ""):
-#    sss(region_name=region)
-#
 
 def main():
     # Logging

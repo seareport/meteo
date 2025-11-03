@@ -153,13 +153,24 @@ def cli_convert_o1280_to_f1280(
 
 def cli_convert_f1280_to_sflux():
     """ Convert F1280 grib files sflux netcdf files """
+    raise NotImplementedError
 
 
 def cli_download_era5():
     """ Download ERA5 from ECMWF using ECMWFAPI """
+    raise NotImplementedError
 
 
 def cli_convert_era5_to_sflux():
     """ Convert ERA5 to sflux format """
+    raise NotImplementedError
 
 
+def cli_hycom():
+    """ Download HYCOM data """
+    raise NotImplementedError
+
+
+def cli_cmems():
+    """ Download CMEMS GLORYS12V1 data """
+    raise NotImplementedError
