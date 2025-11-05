@@ -17,8 +17,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-hycom = ["seawater", "netcdf4"]
-complete = ["seawater", "netcdf4"]
+hycom = ["gsw", "netcdf4"]
+complete = ["gsw", "netcdf4"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

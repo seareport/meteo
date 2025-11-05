@@ -23,12 +23,12 @@ def ConvertTemp(salt, temp, dep):
     # nz = temp.shape[0]
     # ny = temp.shape[1]
     # nx = temp.shape[2]
-    import seawater as sw
+    import gsw
 
     pr = np.ones(temp.shape)
     pre = pr * dep[:, None, None]
     Pr = np.zeros(temp.shape)
-    ptemp = sw.ptmp(salt, temp, pre, Pr) * POTENTIAL_TEMP_CORRECTION
+    ptemp = gsw.pt_from_t(salt, temp, pre, Pr) * POTENTIAL_TEMP_CORRECTION
     return ptemp
 
 
