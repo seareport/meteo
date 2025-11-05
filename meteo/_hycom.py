@@ -13,8 +13,8 @@ from ._constants import HYCOM_MAX_DEPTH_INDEX
 from ._constants import POTENTIAL_TEMP_CORRECTION
 from ._constants import SUB_SAMPLE
 from ._literals import L_Days
+from ._literals import L_HYCOM_Dataset
 from ._literals import L_Months
-from ._literals import L_Sources
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def download_hycom(
     year: int,
     month: L_Months,
     day: Annotated[L_Days, Parameter(show_choices=False)],
-    source: L_Sources = "Operational",
+    dataset: L_HYCOM_Dataset = "Operational",
     output_dir: Path | None = None,
 ):
     """
@@ -95,11 +95,11 @@ def download_hycom(
     output_dir : Path, default: system-specific
         Output directory for downloaded files. Data is saved to a 'HYCOM'
         subdirectory within this path. Defaults to a platform-specific location.
-    source: str
+    dataset: str
         If the dataset type is "Operational" or "Reanalysis"
     """
 
-    if source == "Reanalysis":
+    if dataset == "Reanalysis":
         raise NotImplementedError("Reanalysis not implemented yet")
 
     logger.debug("Saving to: %s", output_dir)
@@ -112,9 +112,7 @@ def download_hycom(
     logger.info(f"Fetching data for {date} from database {database}")
 
     time_idx, lon_idx1, lon_idx2, lat_idx1, lat_idx2 = get_idxs(date, database, bbox)
-    selection_str = (
-        f"[{lat_idx1}:{SUB_SAMPLE}:{lat_idx2}][{lon_idx1}:{SUB_SAMPLE}:{lon_idx2}]"
-    )
+    selection_str = f"[{lat_idx1}:{SUB_SAMPLE}:{lat_idx2}][{lon_idx1}:{SUB_SAMPLE}:{lon_idx2}]"
 
     url_ssh = (
         f"https://tds.hycom.org/thredds/dodsC/{database}?lat[{lat_idx1}:{SUB_SAMPLE}:{lat_idx2}],"

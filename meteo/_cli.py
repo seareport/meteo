@@ -14,8 +14,8 @@ from cyclopts.types import ResolvedExistingDirectory
 
 from ._literals import L_Days
 from ._literals import L_ECMWF_Variables
+from ._literals import L_HYCOM_Dataset
 from ._literals import L_Months
-from ._literals import L_Sources
 from ._utils import get_grib_path
 
 _HOSTNAME = platform.node()
@@ -33,19 +33,13 @@ if "meluxina" in _HOSTNAME:
     _SCRATCH_DIR = pathlib.Path(f"/project/scratch/p{_GROUP_ID}")
     _default_cache_dir = _SCRATCH_DIR / "cache"
     _default_ecmwf_operational_dir = _PROJECT_DIR / "02_meteo/ecmwf/operational/"
-    _default_hycom_operational_dir = _PROJECT_DIR / "02_meteo/hycom_forecast/"
+    _default_hycom_operational_dir = _PROJECT_DIR / "02_meteo/hycom_operational/"
     _default_hycom_reanalysis_dir = _PROJECT_DIR / "02_meteo/hycom_reanalysis/"
 else:
     _default_cache_dir = platformdirs.user_cache_path()
-    _default_ecmwf_operational_dir = pathlib.Path(
-        os.environ.get("ECMWF_OPERATIONAL_DIR", ".")
-    )
-    _default_hycom_operational_dir = pathlib.Path(
-        os.environ.get("HYCOM_DIR_FORECAST", ".")
-    )
-    _default_hycom_reanalysis_dir = pathlib.Path(
-        os.environ.get("HYCOM_DIR_REANALYSIS", ".")
-    )
+    _default_ecmwf_operational_dir = pathlib.Path(os.environ.get("ECMWF_OPERATIONAL_DIR", "."))
+    _default_hycom_operational_dir = pathlib.Path(os.environ.get("HYCOM_DIR_FORECAST", "."))
+    _default_hycom_reanalysis_dir = pathlib.Path(os.environ.get("HYCOM_DIR_REANALYSIS", "."))
 
 _DEFAULT_ECMWF_OPERATIONAL_DIR = _default_ecmwf_operational_dir
 _DEFAULT_HYCOM_OPERATIONAL_DIR = _default_hycom_operational_dir
@@ -57,7 +51,7 @@ _DEFAULT_CACHE_METVIEW_DIR = _DEFAULT_CACHE_DIR / "metview"
 _YEAR_VALIDATOR = Parameter(validator=validators.Number(gte=1900))
 
 
-def get_hycom_dir(source: L_Sources = "Operational") -> Path:
+def get_hycom_dir(source: L_HYCOM_Dataset = "Operational") -> Path:
     if source == "Operational":
         return _DEFAULT_HYCOM_OPERATIONAL_DIR
     elif source == "Reanalysis":
@@ -163,12 +157,8 @@ def cli_convert_o1280_to_f1280(
     """
     from meteo._convert import o1280_to_f1280
 
-    o1280_path = (
-        ecmwf_operational_dir / "O1280" / get_grib_path(variable, year, month, "O1280")
-    )
-    f1280_path = (
-        ecmwf_operational_dir / "F1280" / get_grib_path(variable, year, month, "F1280")
-    )
+    o1280_path = ecmwf_operational_dir / "O1280" / get_grib_path(variable, year, month, "O1280")
+    f1280_path = ecmwf_operational_dir / "F1280" / get_grib_path(variable, year, month, "F1280")
     o1280_to_f1280(
         o1280_path=o1280_path,
         f1280_path=f1280_path,
@@ -197,14 +187,11 @@ def cli_hycom(
     year: Annotated[int, _YEAR_VALIDATOR],
     month: L_Months,
     day: Annotated[L_Days, Parameter(show_choices=False)],
-    source: L_Sources = "Operational",
+    dataset: L_HYCOM_Dataset = "Operational",
     output_dir: Path | None = None,
 ):
     """
     Download HYCOM data.
-
-    Downloads high-resolution (~9km) ECMWF operational forecast data in GRIB format
-    for a specified month. Requires ECMWF API credentials in `~/.ecmwfapirc`.
 
     Parameters
     ----------
@@ -214,22 +201,22 @@ def cli_hycom(
         Month to download (1-12).
     day : int
         Day to download (1-31).
-    output_dir : Path, default: system-specific
-        Output directory for downloaded files. Data is saved to a 'HYCOM'
-        subdirectory within this path. Defaults to a platform-specific location.
-    source: str
+    dataset: str
         If the dataset type is "Operational" or "Reanalysis"
+    output_dir : Path, default: system-specific
+        Output directory for downloaded files. Data is saved to a 'hycom_{dataset}'
+        subdirectory within this path. Defaults to a platform-specific location.
 
     Notes
     -----
     Output files follow a standardized naming convention within the HYCOM subdirectory.
     For example, downloading mean sea level pressure for 11 January 2024 creates:
-    ``{output_dir}/HYCOM/hycom_20240111.nc``
+    ``{output_dir}/hycom_{dataset}/hycom_20240111.nc``
     """
     from meteo._hycom import download_hycom
 
     if output_dir is None:
-        if source == "Operational":
+        if dataset == "Operational":
             output_dir = _DEFAULT_HYCOM_OPERATIONAL_DIR
         else:
             raise NotImplementedError("Reanalysis not implemented yet")
@@ -238,8 +225,8 @@ def cli_hycom(
         year=year,
         month=month,
         day=day,
-        output_path=get_hycom_dir(source),
-        source=source,
+        dataset=dataset,
+        output_dir=get_hycom_dir(dataset),
     )
 
 

@@ -19,9 +19,7 @@ ECMWF_VARIABLE_CODES = {
 }
 
 for key in ECMWF_VARIABLE_CODES:
-    assert (
-        key in SUPPORTED_ECMWF_VARIABLES
-    ), f"{key} not in: {SUPPORTED_ECMWF_VARIABLES}"
+    assert key in SUPPORTED_ECMWF_VARIABLES, f"{key} not in: {SUPPORTED_ECMWF_VARIABLES}"
 
 # HYCOM
 HYCOM_MAX_DEPTH_INDEX = 39
