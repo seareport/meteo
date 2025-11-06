@@ -3,17 +3,18 @@ from __future__ import annotations
 import os
 import pathlib
 import platform
+from pathlib import Path
 from typing import Annotated
 
 import platformdirs
-
 from cyclopts import Parameter
 from cyclopts import validators
 from cyclopts.types import ResolvedDirectory
 from cyclopts.types import ResolvedExistingDirectory
 
-from ._literals import L_Months
+from ._literals import L_Days
 from ._literals import L_ECMWF_Variables
+from ._literals import L_Months
 from ._utils import get_grib_path
 
 _HOSTNAME = platform.node()
@@ -22,6 +23,7 @@ _HOSTNAME = platform.node()
 # We will use CONSTANTS after we initialize them
 _default_cache_dir: pathlib.Path
 _default_ecmwf_operational_dir: pathlib.Path
+_default_hycom_dir: pathlib.Path
 
 if "meluxina" in _HOSTNAME:
     _GROUP_ID = os.getgroups()[-1]
@@ -29,17 +31,19 @@ if "meluxina" in _HOSTNAME:
     _SCRATCH_DIR = pathlib.Path(f"/project/scratch/p{_GROUP_ID}")
     _default_cache_dir = _SCRATCH_DIR / "cache"
     _default_ecmwf_operational_dir = _PROJECT_DIR / "02_meteo/ecmwf/operational/"
+    _default_hycom_dir = _PROJECT_DIR / "02_meteo/hycom/"
 else:
     _default_cache_dir = platformdirs.user_cache_path()
     _default_ecmwf_operational_dir = pathlib.Path(os.environ.get("ECMWF_OPERATIONAL_DIR", "."))
+    _default_hycom_dir = pathlib.Path(os.environ.get("HYCOM_DIR", "hycom"))
 
 _DEFAULT_ECMWF_OPERATIONAL_DIR = _default_ecmwf_operational_dir
+_DEFAULT_HYCOM_DIR = _default_hycom_dir
 _DEFAULT_CACHE_DIR = _default_cache_dir
 _DEFAULT_CACHE_MIR_DIR = _DEFAULT_CACHE_DIR / "mir"
 _DEFAULT_CACHE_METVIEW_DIR = _DEFAULT_CACHE_DIR / "metview"
 
 _YEAR_VALIDATOR = Parameter(validator=validators.Number(gte=1900))
-
 
 def cli_download_o1280(
     year: Annotated[int, _YEAR_VALIDATOR],
@@ -152,25 +156,64 @@ def cli_convert_o1280_to_f1280(
 
 
 def cli_convert_f1280_to_sflux():
-    """ Convert F1280 grib files sflux netcdf files """
+    """Convert F1280 grib files sflux netcdf files"""
     raise NotImplementedError
 
 
 def cli_download_era5():
-    """ Download ERA5 from ECMWF using ECMWFAPI """
+    """Download ERA5 from ECMWF using ECMWFAPI"""
     raise NotImplementedError
 
 
 def cli_convert_era5_to_sflux():
-    """ Convert ERA5 to sflux format """
+    """Convert ERA5 to sflux format"""
     raise NotImplementedError
 
 
-def cli_hycom():
-    """ Download HYCOM data """
-    raise NotImplementedError
+def cli_hycom(
+    year: Annotated[int, _YEAR_VALIDATOR],
+    month: L_Months,
+    day: Annotated[L_Days, Parameter(show_choices=False)],
+    output_dir: Path = _DEFAULT_HYCOM_DIR,
+    normalize: bool = True
+):
+    """
+    Download HYCOM data.
+
+    Parameters
+    ----------
+    year : int
+        Year to download (must be >= 1900).
+    month : int
+        Month to download (1-12).
+    day : int
+        Day to download (1-31).
+    output_dir : Path, default: system-specific
+        Output directory for downloaded files.
+        Defaults to `_DEFAULT_HYCOM_DIR` which is a platform-specific location.
+    normalize: bool
+        Convert HYCOM longitude coordinates to the 0-360° convention
+
+    Notes
+    -----
+    This function is based on the DownloadHycom Class in pyschism: https://github.com/schism-dev/pyschism/blob/44061ac6c594417d3d7e5c624ab03d76a569cb05/pyschism/forcing/hycom/hycom2schism.py#L778
+    Output files are saved by default in the `_DEFAULT_HYCOM_DIR` directory that can be changed with the --output_dir flag.
+    For example, downloading HYCOM for 11 January 2024 creates:
+    ``{output_dir}/hycom_20240111.nc``
+
+    More info on the HYCOM model: https://www.hycom.org
+    """
+    from meteo._hycom import download_hycom
+
+    download_hycom(
+        year=year,
+        month=month,
+        day=day,
+        output_dir=output_dir,
+        normalize=normalize
+    )
 
 
 def cli_cmems():
-    """ Download CMEMS GLORYS12V1 data """
+    """Download CMEMS GLORYS12V1 data"""
     raise NotImplementedError
