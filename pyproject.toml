@@ -13,9 +13,12 @@ dependencies = [
     "logfmter",
     "ecmwf-api-client",
     "metview",
-    "platformdirs"
+    "platformdirs",
 ]
 
+[project.optional-dependencies]
+hycom = ["gsw", "netcdf4"]
+complete = ["gsw", "netcdf4"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
