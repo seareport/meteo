@@ -12,6 +12,7 @@ from cyclopts import validators
 from cyclopts.types import ResolvedDirectory
 from cyclopts.types import ResolvedExistingDirectory
 
+from ._literals import L_6Hours
 from ._literals import L_Days
 from ._literals import L_ECMWF_Variables
 from ._literals import L_Months
@@ -32,14 +33,17 @@ if "meluxina" in _HOSTNAME:
     _default_cache_dir = _SCRATCH_DIR / "cache"
     _default_ecmwf_dir = _PROJECT_DIR / "02_meteo/ecmwf/"
     _default_hycom_dir = _PROJECT_DIR / "02_meteo/hycom/"
+    _default_cmems_dir = _PROJECT_DIR / "02_meteo/cmems/"
 else:
     _default_cache_dir = platformdirs.user_cache_path()
     _default_ecmwf_dir = pathlib.Path(os.environ.get("ECMWF_DIR", "ecmwf"))
     _default_hycom_dir = pathlib.Path(os.environ.get("HYCOM_DIR", "hycom"))
+    _default_cmems_dir = pathlib.Path(os.environ.get("CMEMS_DIR", "cmems"))
 
 _DEFAULT_ECMWF_DIR = _default_ecmwf_dir
 _DEFAULT_HYCOM_DIR = _default_hycom_dir
 _DEFAULT_ECMWF_OPERATIONAL_DIR = _DEFAULT_ECMWF_DIR / "operational/O1280"
+_DEFAULT_CMEMS_DIR = _default_cmems_dir
 _DEFAULT_CACHE_DIR = _default_cache_dir
 _DEFAULT_CACHE_MIR_DIR = _DEFAULT_CACHE_DIR / "mir"
 _DEFAULT_CACHE_METVIEW_DIR = _DEFAULT_CACHE_DIR / "metview"
@@ -215,6 +219,54 @@ def cli_hycom(
     )
 
 
-def cli_cmems():
-    """Download CMEMS GLORYS12V1 data"""
-    raise NotImplementedError
+def cli_cmems(
+    year: Annotated[int, _YEAR_VALIDATOR],
+    month: L_Months,
+    day: Annotated[L_Days, Parameter(show_choices=False)],
+    hour: L_6Hours = 0,
+    dataset: str = "cmems_mod_glo_phy",
+    output_dir: Path = _DEFAULT_CMEMS_DIR
+):
+    """
+    Download CMEMS data using the `copernicusmarine` python API
+
+    Parameters
+    ----------
+    year : int
+        Year to download (must be >= 1900).
+    month : int
+        Month to download (1-12).
+    day : int
+        Day to download (1-31).
+    hour : int
+        Hour to download (0/6/12 or 18)
+    dataset : str
+        dataset to download from the Copernicus Marine Data Store.
+        For now, only `cmems_mod_glo_phy` is available
+    output_dir : Path, default: system-specific
+        Output directory for downloaded files.
+        Defaults to `_DEFAULT_CMEMS_DIR` which is a platform-specific location.
+
+    Notes
+    -----
+    Many datasets can be downloaded from the Copernicus Marine Data Store.
+    For now, only the GLORYSv12 `cmems_mod_glo_phy` Reanalysis and Forecast (1993 - present) are available.
+
+    If the selected date is before 16/09/2025, the Reanalysis product is used; otherwise, the Forecast product is selected.
+
+    If the selected hour is 0, the Daily product is used; otherwise, the 6-Hourly product is used. This rule applies only to forecasts.
+    For reanalysis data, the nearest daily value at midnight is retrieved.
+
+    More info on the other products can be found at: https://data.marine.copernicus.eu/product/
+    More info on the Python API can be found at: https://help.marine.copernicus.eu/en/collections/9080063-copernicus-marine-toolbox
+    """
+    from meteo._cmems import download_cmems
+
+    download_cmems(
+        year=year,
+        month=month,
+        day=day,
+        hour=hour,
+        dataset=dataset,
+        output_dir=output_dir,
+    )
