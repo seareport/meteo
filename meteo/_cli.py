@@ -82,7 +82,7 @@ def cli_download_o1280(
     For example, downloading mean sea level pressure for January 2024 creates:
     ``{output_dir}/O1280/grib/2024/o.2024.01.msl.grib``
     """
-    from meteo._download import download_o1280_month
+    from meteo._ecmwf import download_o1280_month
 
     download_o1280_month(
         variable=variable,
