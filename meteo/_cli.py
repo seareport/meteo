@@ -22,7 +22,7 @@ _HOSTNAME = platform.node()
 # mutable variables during initialization
 # We will use CONSTANTS after we initialize them
 _default_cache_dir: pathlib.Path
-_default_ecmwf_operational_dir: pathlib.Path
+_default_ecmwf_dir: pathlib.Path
 _default_hycom_dir: pathlib.Path
 
 if "meluxina" in _HOSTNAME:
@@ -30,15 +30,16 @@ if "meluxina" in _HOSTNAME:
     _PROJECT_DIR = pathlib.Path(f"/project/home/p{_GROUP_ID}")
     _SCRATCH_DIR = pathlib.Path(f"/project/scratch/p{_GROUP_ID}")
     _default_cache_dir = _SCRATCH_DIR / "cache"
-    _default_ecmwf_operational_dir = _PROJECT_DIR / "02_meteo/ecmwf/operational/"
+    _default_ecmwf_dir = _PROJECT_DIR / "02_meteo/ecmwf/"
     _default_hycom_dir = _PROJECT_DIR / "02_meteo/hycom/"
 else:
     _default_cache_dir = platformdirs.user_cache_path()
-    _default_ecmwf_operational_dir = pathlib.Path(os.environ.get("ECMWF_OPERATIONAL_DIR", "."))
+    _default_ecmwf_dir = pathlib.Path(os.environ.get("ECMWF_DIR", "ecmwf"))
     _default_hycom_dir = pathlib.Path(os.environ.get("HYCOM_DIR", "hycom"))
 
-_DEFAULT_ECMWF_OPERATIONAL_DIR = _default_ecmwf_operational_dir
+_DEFAULT_ECMWF_DIR = _default_ecmwf_dir
 _DEFAULT_HYCOM_DIR = _default_hycom_dir
+_DEFAULT_ECMWF_OPERATIONAL_DIR = _DEFAULT_ECMWF_DIR / "operational/O1280"
 _DEFAULT_CACHE_DIR = _default_cache_dir
 _DEFAULT_CACHE_MIR_DIR = _DEFAULT_CACHE_DIR / "mir"
 _DEFAULT_CACHE_METVIEW_DIR = _DEFAULT_CACHE_DIR / "metview"
@@ -82,13 +83,13 @@ def cli_download_o1280(
     For example, downloading mean sea level pressure for January 2024 creates:
     ``{output_dir}/O1280/grib/2024/o.2024.01.msl.grib``
     """
-    from meteo._download import download_o1280_month
+    from meteo._ecmwf import download_o1280_month
 
     download_o1280_month(
         variable=variable,
         year=year,
         month=month,
-        output_path=output_dir / "O1280",
+        output_path=output_dir,
         no_steps=no_steps,
     )
 
