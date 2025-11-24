@@ -18,7 +18,8 @@ dependencies = [
 
 [project.optional-dependencies]
 hycom = ["gsw", "netcdf4"]
-complete = ["gsw", "netcdf4"]
+complete = ["gsw", "netcdf4", "copernicusmarine"]
+cmems = ["copernicusmarine"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
