@@ -1,5 +1,4 @@
 import logging
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -12,6 +11,7 @@ from ._literals import L_Months
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 logging.getLogger().setLevel(logging.INFO)
+logging.getLogger("urllib3").setLevel(logging.INFO)
 
 
 def retrieve_cmems_phy_forecast_analysis(date: pd.Timestamp):
