@@ -1,9 +1,13 @@
+import pathlib
+
 import xarray as xr
 
 from ._literals import L_ECMWF_Variables
 from ._literals import L_Grids
 from ._literals import L_Months
 
+CANDIDATES_LON = ["x", "lon", "longitude", "xlon", "nav_lon", "glamt", "glamf", "lon_rho"]
+CANDIDATES_LAT = ["y", "lat", "latitude", "ylat", "nav_lat", "gphit", "gphif", "lat_rho"]
 
 def get_grib_path(variable: L_ECMWF_Variables, year: int, month: L_Months, grid: L_Grids) -> str:
     # XXX: If this path structure changes, update the docstring examples in:
@@ -32,3 +36,209 @@ def normalize_longitude(ds: xr.Dataset, lon_name: str, to_360: bool = True) -> x
         normalized[lon_name] = lon3_to_lon1(normalized[lon_name])
     normalized = normalized.sortby([lon_name])
     return normalized
+
+
+def detect_name_in_ds(ds: xr.Dataset, candidates: list[str]):
+    """
+    Detect coordinate name using:
+    1) CF conventions
+    2) Name-based lookup in coords
+    3) Name-based lookup in variables
+    """
+    import cf_xarray
+    cand_set = {c.lower() for c in candidates}
+    try:
+        if "longitude" in cand_set and "longitude" in ds.cf.coordinates:
+            return ds.cf.coordinates["longitude"][0]
+
+        if "latitude" in cand_set and "latitude" in ds.cf.coordinates:
+            return ds.cf.coordinates["latitude"][0]
+
+    except Exception:
+        pass
+
+    for name in ds.coords:
+        if name.lower() in candidates:
+            return name
+
+    for name in ds.variables:
+        if name.lower() in candidates:
+            return name
+
+    raise ValueError(f"Could not auto-detect coord name in {candidates}")
+
+
+def detect_name(ds: xr.Dataset, var = "longitude") -> str:
+    if var == "longitude":
+        return detect_name_in_ds(ds, CANDIDATES_LON)
+    elif var == "latitude":
+        return detect_name_in_ds(ds, CANDIDATES_LAT)
+    else:
+        raise ValueError(f"No candidate associated with {var}")
+
+
+def detect_pad_width(ds: xr.Dataset, lon_name: str) -> int:
+    import numpy as np
+    ds = ds.sortby([lon_name])
+    lon = ds[lon_name].values
+
+    if ds[lon_name].ndim != 1:
+        raise ValueError(f"Longitude {lon_name} must be 1D for padding.")
+
+    left = lon[0]
+    right = lon[-1]
+    diffs = np.diff(lon)
+    left_step = diffs[0]
+    left_pad = int(np.ceil(abs(-180 - left)/left_step))
+    right_step = diffs[-1]
+    right_pad = int(np.ceil(abs(180 - right)/right_step))
+
+    pad_width = np.max([left_pad, right_pad])
+
+    if pad_width <= 0 or pad_width >= len(lon):
+        raise ValueError(f"Invalid auto-detected pad width: {pad_width}")
+
+    return pad_width
+
+
+def pad_lon(ds: xr.Dataset, pad_width: int, lon_name: str = "longitude") -> xr.Dataset:
+    # Pad the Dataset and Normalize longitude values of PAD.
+    # We use `wrap` mode in order to handle the Antimeridian
+    # Nevertheless it is necessary to "normalize" the longitudes due to the following issue.
+    # After padding the longitude values are like this:
+    #     179.7 179.9 -179.9 -177.7 .... 177.7 177.9 -177.9 -177.7
+    # This causes a problem if we convert to a pandas dataframe and then back to xarray:
+    #     df = ds.elevation.to_dataframe()
+    #     final = df.to_xarray()
+    # The `.to_xarray()` call reorders the index and messes things up. By normalizing
+    # the longitude values, i.e. by converting them to:
+    #     -180.3 -180.1 -179.9 -177.7 ... 177.7 177.9 180.1 180.3
+    # then no reordering happens and we can use normal .isel() to trim the adjusted dataset
+    import numpy as np
+    padded = ds.pad({lon_name: pad_width}, mode="wrap", keep_attrs=True)
+    lon = padded[lon_name].values
+    padded = padded.assign_coords({
+        lon_name: np.concatenate((
+            -180 - (180 - lon[:pad_width]),
+            lon[pad_width:-pad_width],
+            lon[-pad_width:] % 360,
+        )),
+    })
+    return padded
+
+
+def pad_lat(
+    ds: xr.Dataset,
+    lat_name: str = "latitude",
+    method: str = "fade",
+    side: str = "north"
+) -> xr.Dataset:
+    """
+    Pad dataset to the poles (±90°) based on detected latitude resolution
+
+    method:
+        "fade" : Blend boundary row into nanmedian toward pole
+        "median" : Fill with nanmedian of boundary row.
+    """
+    import numpy as np
+    ds = ds.sortby(lat_name)
+    lat = ds[lat_name].values
+
+    diffs = np.diff(lat)
+    result = ds.copy()
+    if side in ["south", "both"]:
+        result = _pad_lat_single_side(result, lat_name, diffs[0], method, side="south")
+    if side in ["north", "both"]:
+        result = _pad_lat_single_side(result, lat_name, diffs[-1], method, side="north")
+    if side not in ["south", "north", "both"]:
+        raise ValueError(f"Side is {side}, and should be one of `south`, `north`, `both`")
+
+    return result.sortby(lat_name)
+
+
+def _pad_lat_single_side(
+    ds: xr.Dataset,
+    lat_name: str,
+    lat_step: float,
+    method: str,
+    side: str,     # "south" or "north"
+) -> xr.Dataset:
+    import numpy as np
+    if lat_step <= 0 or np.isnan(lat_step):
+        raise ValueError(f"Cannot detect valid latitude spacing from {lat_name}")
+
+    lat = ds[lat_name].values
+    if side == "south":
+        lat_edge = lat.min()
+        pole = -90.0
+        need_padding = lat_edge > pole
+    else:  # north
+        lat_edge = lat.max()
+        pole = 90.0
+        need_padding = lat_edge < pole
+
+    if not need_padding:
+        return ds
+
+    n_extra = int(np.ceil(abs(pole - lat_edge) / lat_step))
+    if side == "south":
+        new_lats = lat_edge - lat_step * np.arange(1, n_extra + 1)
+    else:
+        new_lats = lat_edge + lat_step * np.arange(1, n_extra + 1)
+
+    new_lats[-1] = pole
+    new_lats = np.sort(new_lats)
+
+    if side == "south":
+        idx = 0
+    else:
+        idx = -1
+
+    edge_row = ds.isel({lat_name: idx})
+
+    medians = {
+        var: np.nanmedian(edge_row[var].values)
+        for var in ds.data_vars
+    }
+
+    padded_rows = []
+
+    for lat_i in new_lats:
+        if method == "median":
+            new_row = xr.Dataset({
+                var: xr.full_like(edge_row[var], medians[var])
+                for var in ds.data_vars
+            })
+        elif method == "fade":  # linear fade from edge row to pole
+            w = abs(lat_i - lat_edge) / abs(pole - lat_edge)
+            new_row = xr.Dataset()
+            for var in ds.data_vars:
+                orig = edge_row[var]
+                medianv = medians[var]
+                new_row[var] = (1 - w) * orig + w * medianv
+
+        else:
+            raise ValueError(f"Unknown method '{method}'. Choose: fade, median")
+
+        new_row = new_row.assign_coords({lat_name: lat_i})
+        padded_rows.append(new_row)
+
+    padded_block = xr.concat(padded_rows, dim=lat_name)
+
+    if side == "south":
+        return xr.concat([padded_block, ds], dim=lat_name)
+    else:
+        return xr.concat([ds, padded_block], dim=lat_name)
+
+
+def write_file(ds: xr.Dataset, output_file: pathlib.Path, overwrite: bool) -> None:
+    if not overwrite and output_file.exists():
+        raise FileExistsError(f"{output_file} already exists")
+
+    out_suffix = output_file.suffix.lower()
+    if out_suffix == ".zarr":
+        ds.to_zarr(output_file, mode="w")
+    elif out_suffix == ".nc":
+        ds.to_netcdf(output_file)
+    else:
+        raise NotImplementedError(f"export for {out_suffix} is not available")

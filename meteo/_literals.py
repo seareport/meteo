@@ -1,4 +1,5 @@
 from typing import Literal
+from typing import Union
 
 L_Grids = Literal["O1280", "F1280"]
 L_Months = Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
@@ -11,3 +12,7 @@ L_CMEMS_Dataset = Literal[
     "cmems_mod_glo_phy", # Global Ocean Physics Analysis and Forecast
     # "cmems_mod_glo_wav", # Global Ocean Waves Analysis and Forecast
 ]
+Lon_Convention = Literal["180", "360"]
+PadMethodLon = Union[Literal["auto"], int]
+PadMethodLat = Literal["median", "fade"]
+PadSideLat = Literal["north", "south", "both"]

@@ -5,6 +5,7 @@ import logging
 import os
 import pathlib
 import sys
+
 import logfmter
 from cyclopts import App
 
@@ -18,6 +19,8 @@ convert_app = App(name="convert", help="Convert data to other formats")
 convert_app.command("meteo._cli:cli_convert_era5_to_sflux", name="era5-to-sflux")
 convert_app.command("meteo._cli:cli_convert_f1280_to_sflux", name="to-sflux")
 convert_app.command("meteo._cli:cli_convert_o1280_to_f1280", name="to-f1280")
+convert_app.command("meteo._cli:cli_convert_normalize_lon", name="normalize_lon")
+convert_app.command("meteo._cli:cli_convert_pad", name="pad")
 
 main_app = App()
 main_app.command(convert_app)
