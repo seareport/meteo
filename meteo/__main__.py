@@ -12,13 +12,13 @@ from cyclopts import App
 download_app = App(name="download", help="Download data from the internet")
 download_app.command("meteo._cli:cli_cmems", name="cmems")
 download_app.command("meteo._cli:cli_download_era5", name="era5")
-download_app.command("meteo._cli:cli_download_o1280", name="o1280")
+download_app.command("meteo._cli:cli_download_mars", name="mars")
 download_app.command("meteo._cli:cli_hycom", name="hycom")
 
 convert_app = App(name="convert", help="Convert data to other formats")
 convert_app.command("meteo._cli:cli_convert_era5_to_sflux", name="era5-to-sflux")
-convert_app.command("meteo._cli:cli_convert_f1280_to_sflux", name="to-sflux")
-convert_app.command("meteo._cli:cli_convert_o1280_to_f1280", name="to-f1280")
+convert_app.command("meteo._cli:cli_convert_mars_to_sflux", name="mars-to-sflux")
+convert_app.command("meteo._cli:cli_convert_regrid", name="regrid")
 convert_app.command("meteo._cli:cli_convert_normalize_lon", name="normalize_lon")
 convert_app.command("meteo._cli:cli_convert_pad", name="pad")
 
