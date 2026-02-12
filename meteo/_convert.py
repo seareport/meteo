@@ -65,11 +65,8 @@ def convert_pad(
     overwrite: bool,
     )->None:
     import xarray as xr
-    from ._utils import detect_name
-    from ._utils import detect_pad_width
-    from ._utils import normalize_longitude
-    from ._utils import pad_lon
-    from ._utils import pad_lat
+    from ._utils import auto_pad_lon
+    from ._utils import auto_pad_lat
     from ._utils import write_file
 
     if output_file.exists() and not overwrite:
@@ -81,23 +78,11 @@ def convert_pad(
 
     ds = xr.open_dataset(input_file)
     if pad_longitude:
-        # convert to 180 convention
-        lon_name = detect_name(ds, "longitude")
-        ds_norm = normalize_longitude(ds, lon_name, to_360 = False)
-        if method_longitude == "auto":
-            pad_width = detect_pad_width(ds_norm, lon_name)
-            logger.info(f"LON: auto detected pad_width: {pad_width}")
-        elif isinstance(method_longitude, int):
-            pad_width = method_longitude
-        else:
-            raise ValueError(f"Invalid pad_width={pad_width!r}. Must be 'auto' or int.")
-        ds = pad_lon(ds_norm, pad_width, lon_name)
+        ds = auto_pad_lon(ds, method_longitude)
 
     if pad_latitude:
-        lat_name = detect_name(ds, "latitude")
-        ds = pad_lat(
+        ds = auto_pad_lat(
             ds,
-            lat_name = lat_name,
             method = method_latitude,
             side = side
         )

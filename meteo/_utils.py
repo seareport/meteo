@@ -1,10 +1,15 @@
+import datetime
+import logging
 import pathlib
+import re
 
 import xarray as xr
 
 from ._literals import L_ECMWF_Variables
 from ._literals import L_Grids
 from ._literals import L_Months
+
+logger = logging.getLogger(__name__)
 
 CANDIDATES_LON = ["x", "lon", "longitude", "xlon", "nav_lon", "glamt", "glamf", "lon_rho"]
 CANDIDATES_LAT = ["y", "lat", "latitude", "ylat", "nav_lat", "gphit", "gphif", "lat_rho"]
@@ -35,6 +40,21 @@ def normalize_longitude(ds: xr.Dataset, lon_name: str, to_360: bool = True) -> x
     else:
         normalized[lon_name] = lon3_to_lon1(normalized[lon_name])
     normalized = normalized.sortby([lon_name])
+    return normalized
+
+
+def normalize_latitude(ds: xr.Dataset, lat_name: str) -> xr.Dataset:  # pylint: disable=invalid-name
+    normalized = ds.sortby([lat_name])
+    return normalized
+
+
+def normalize_ds(ds: xr.Dataset, to_360: bool = True) -> xr.Dataset:
+    lon_name = detect_name(ds, var= "longitude")
+    lat_name = detect_name(ds, var= "latitude")
+    normalized = normalize_longitude(
+        normalize_latitude(ds, lat_name = lat_name),
+        lon_name,
+        to_360)
     return normalized
 
 
@@ -126,6 +146,19 @@ def pad_lon(ds: xr.Dataset, pad_width: int, lon_name: str = "longitude") -> xr.D
     })
     return padded
 
+def auto_pad_lon(ds: xr.Dataset, method_longitude: str | int) -> xr.Dataset:
+    # convert to 180 convention
+    lon_name = detect_name(ds, "longitude")
+    ds_norm = normalize_longitude(ds, lon_name, to_360 = False)
+    if method_longitude == "auto":
+        pad_width = detect_pad_width(ds_norm, lon_name)
+        logger.info(f"LON: auto detected pad_width: {pad_width}")
+    elif isinstance(method_longitude, int):
+        pad_width = method_longitude
+    else:
+        raise ValueError(f"Invalid pad_width={pad_width!r}. Must be 'auto' or int.")
+    return pad_lon(ds_norm, pad_width, lon_name)
+
 
 def pad_lat(
     ds: xr.Dataset,
@@ -154,6 +187,10 @@ def pad_lat(
         raise ValueError(f"Side is {side}, and should be one of `south`, `north`, `both`")
 
     return result.sortby(lat_name)
+
+def auto_pad_lat(ds: xr.Dataset, method_latitude: str, side: str) -> xr.Dataset:
+    lat_name = detect_name(ds, "latitude")
+    return pad_lat(ds, lat_name, method_latitude, side=side)
 
 
 def _pad_lat_single_side(
@@ -242,3 +279,42 @@ def write_file(ds: xr.Dataset, output_file: pathlib.Path, overwrite: bool) -> No
         ds.to_netcdf(output_file)
     else:
         raise NotImplementedError(f"export for {out_suffix} is not available")
+
+
+def parse_iso_duration(duration_str: str, start: datetime.date) -> datetime.date:
+    pattern = r"P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?"
+    m = re.fullmatch(pattern, duration_str)
+    if not m or not any(m.groups()):
+        raise ValueError(f"Invalid ISO 8601 duration: {duration_str}")
+
+    years = int(m.group(1) or 0)
+    months = int(m.group(2) or 0)
+    weeks = int(m.group(3) or 0)
+    days = int(m.group(4) or 0)
+
+    # Add years and months
+    new_month = start.month + months
+    new_year = start.year + years + (new_month - 1) // 12
+    new_month = (new_month - 1) % 12 + 1
+    # Clamp day to valid range for the new month
+    import calendar
+    max_day = calendar.monthrange(new_year, new_month)[1]
+    new_day = min(start.day, max_day)
+    end = datetime.date(new_year, new_month, new_day)
+
+    # Add weeks and days
+    end += datetime.timedelta(weeks=weeks, days=days)
+    return end
+
+
+def date_range_to_ymd(
+    start: datetime.date, end: datetime.date
+) -> tuple[list[str], list[str], list[str]]:
+    years, months, days = set(), set(), set()
+    current = start
+    while current <= end:
+        years.add(f"{current.year}")
+        months.add(f"{current.month:02d}")
+        days.add(f"{current.day:02d}")
+        current += datetime.timedelta(days=1)
+    return sorted(years), sorted(months), sorted(days)

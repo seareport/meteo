@@ -5,6 +5,7 @@ import pathlib
 import platform
 from pathlib import Path
 from typing import Annotated
+from typing import get_args
 
 import platformdirs
 from cyclopts import Parameter
@@ -15,6 +16,8 @@ from cyclopts.types import ResolvedExistingDirectory
 from ._literals import L_6Hours
 from ._literals import L_Days
 from ._literals import L_ECMWF_Variables
+from ._literals import L_ERA5_sflux_groups
+from ._literals import L_ERA5_Variables
 from ._literals import L_Months
 from ._literals import Lon_Convention
 from ._literals import PadMethodLat
@@ -38,12 +41,15 @@ if "meluxina" in _HOSTNAME:
     _default_ecmwf_dir = _PROJECT_DIR / "02_meteo/ecmwf/"
     _default_hycom_dir = _PROJECT_DIR / "02_meteo/hycom/"
     _default_cmems_dir = _PROJECT_DIR / "02_meteo/cmems/"
+    _default_era5_dir = _PROJECT_DIR / "02_meteo/era5/"
 else:
     _default_cache_dir = platformdirs.user_cache_path()
     _default_ecmwf_dir = pathlib.Path(os.environ.get("ECMWF_DIR", "ecmwf"))
     _default_hycom_dir = pathlib.Path(os.environ.get("HYCOM_DIR", "hycom"))
     _default_cmems_dir = pathlib.Path(os.environ.get("CMEMS_DIR", "cmems"))
+    _default_era5_dir = pathlib.Path(os.environ.get("ERA5_DIR", "era5"))
 
+_DEFAULT_ERA5_DIR = _default_era5_dir
 _DEFAULT_ECMWF_DIR = _default_ecmwf_dir
 _DEFAULT_HYCOM_DIR = _default_hycom_dir
 _DEFAULT_ECMWF_OPERATIONAL_DIR = _DEFAULT_ECMWF_DIR / "operational/O1280"
@@ -256,14 +262,95 @@ def cli_convert_f1280_to_sflux():
     raise NotImplementedError
 
 
-def cli_download_era5():
-    """Download ERA5 from ECMWF using ECMWFAPI"""
-    raise NotImplementedError
+def cli_download_era5(
+    *,
+    start_date: Annotated[str, Parameter(help="Start date YYYYMMDD")],
+    duration: Annotated[str | None, Parameter(help="ISO 8601 duration, e.g. P1M, P7D")] = "P1M",
+    variable: Annotated[L_ERA5_Variables, Parameter(show_choices=True)] = None,
+    output_dir: ResolvedDirectory = _DEFAULT_ERA5_DIR,
+) -> None:
+    """
+    Download ERA5 from ECMWF using the [new `ecmwf-datastores-client` API](https://ecmwf.github.io/ecmwf-datastores-client/) (async downloads)
+
+    The ERA5 request downloads by default variables for hydrodynamic baroclinic simulations, divided in two groups of **different `stepType`** values:
+
+    | `stepType`  | Variables                         | Time dimension                   |
+    |------------|-----------------------------------|----------------------------------|
+    | `instant`  | `u10`, `v10`, `d2m`, `t2m`, `msl` | Hourly (`time` of length 720) |
+    | `avg`      | `avg_tprate`, `avg_sdswrf`, `avg_sdlwrf` | 12-hour forecast steps from twice-daily reference times (61 `time` × 12 `step`) |
+
+    The request is thus split into two sub-requests to avoid having a unique dataset with mixed `stepType`, inducing errors when opening the full dataset with xarray.
+
+    Parameters
+    ----------
+    start_date : str
+        Start date of the data to download in YYYYMMDD format.
+    duration : str
+        ISO 8601 string for period to download (e.g., `PnD`, `PnW`, `PnM`, `PnY` and combinations like `P1M15D`)
+    variable : str
+        ERA5 variables, by default all are downloaded (~11 Gb).
+    output_dir : Path, default: system-specific
+        Output directory for downloaded files.
+        Defaults to `_DEFAULT_ERA5_DIR` which is a platform-specific location.
+
+    Notes
+    -----
+    Output files are saved by default in the `_DEFAULT_ERA5_DIR` directory that can be changed with the --output_dir flag.
+    For example, downloading ERA5 for January 2024 creates 2 files:
+     * ``{output_dir}/era5_{start:%Y%m%d}_{end:%Y%m%d}_avg.grib``
+     * ``{output_dir}/era5_{start:%Y%m%d}_{end:%Y%m%d}_instant.grib``
+    """
+    if variable is None:
+        variable = list(get_args(L_ERA5_Variables))
+    from meteo._ecmwf import download_era5
+
+    download_era5(
+        variable=variable,
+        start_date=start_date,
+        duration=duration,
+        output_dir=output_dir,
+    )
 
 
-def cli_convert_era5_to_sflux():
-    """Convert ERA5 to sflux format"""
-    raise NotImplementedError
+def cli_convert_era5_to_sflux(
+    *,
+    file: Annotated[Path, Parameter(validator=validators.Path(exists=True, file_okay=True, dir_okay=False))],
+    group: L_ERA5_sflux_groups,
+    output_dir: Path = _DEFAULT_ERA5_DIR / "sflux",
+    overwrite: Annotated[bool, Parameter(negative=False)] = False,
+):
+    """
+    Convert ERA5 GRIB files to SCHISM sflux format.
+
+    ERA5 GRIB files mix instant and averaged variables with incompatible time axes, so they must be opened separately by stepType before conversion.
+    Each argument expects a NetCDF file already filtered and normalized for its variable group.
+
+    Note: This implementation assumes global ERA5 input data intended for interpolation onto global models. Longitude is padded by default (cyclic wrap-around) to ensure periodic continuity across the -180°/180° boundary.
+
+    Parameters
+    ----------
+    file: Path
+        Path to the input GRIB file containing ERA5 data. The file should contain only the relevant variables for either the `air`, `rad`, or `prc` group, and should be preprocessed to have consistent longitude and latitude coordinates.
+        * For `air` variables (`u10`, `v10`, `d2m`, `t2m`, `msl`), the file should contain hourly data with `stepType=instant`.
+        * For `rad` variables (`avg_sdswrf`, `avg_sdlwrf`), the file should contain 12-hourly averaged data with `stepType=avg`.
+        * For `prc` variable (`avg_tprate`), the file should contain 12-hourly averaged data with `stepType=avg`.
+    group: str
+        Variable group to convert. Must be one of 'air', 'rad', or 'prc'.
+    output_dir: Path
+        Output directory. Daily files are written as `sflux_{air,rad,prc}_1.XXXX.nc`
+        Defaults to `_DEFAULT_ERA5_DIR/sflux` which is a platform-specific location.
+    overwrite: bool
+        Whether to overwrite the output file if it already exists.
+    """
+
+    from meteo._sflux import era5_to_sflux
+
+    era5_to_sflux(
+        file=file,
+        group=group,
+        output_dir=output_dir,
+        overwrite=overwrite,
+    )
 
 
 def cli_hycom(

@@ -19,8 +19,10 @@ dependencies = [
 
 [project.optional-dependencies]
 hycom = ["gsw", "netcdf4"]
-complete = ["gsw", "netcdf4", "copernicusmarine"]
+complete = ["gsw", "netcdf4", "copernicusmarine", "ecmwf-datastores-client", "cfgrib"]
 cmems = ["copernicusmarine"]
+era5 = ["ecmwf-datastores-client"]
+sflux = ["cfgrib"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
