@@ -16,6 +16,10 @@ from ._literals import L_6Hours
 from ._literals import L_Days
 from ._literals import L_ECMWF_Variables
 from ._literals import L_Months
+from ._literals import Lon_Convention
+from ._literals import PadMethodLat
+from ._literals import PadMethodLon
+from ._literals import PadSideLat
 from ._utils import get_grib_path
 
 _HOSTNAME = platform.node()
@@ -95,6 +99,93 @@ def cli_download_o1280(
         month=month,
         output_path=output_dir,
         no_steps=no_steps,
+    )
+
+
+def cli_convert_normalize_lon(
+    input_file: pathlib.Path,
+    output_file: pathlib.Path,
+    *,
+    longitude_convention: Lon_Convention = "180",
+    overwrite: Annotated[bool, Parameter(negative=False)] = False,
+) -> None:
+    """Normalize longitude to [-180°, 180°] or [0°, 360°].
+
+    Parameters
+    ----------
+    input_file:
+        Path to the input dataset file (e.g., NetCDF, zarr).
+    output_file:
+        Path to save the normalized dataset.
+    longitude_convention:
+        Determines the longitude convention; [-180°, 180°] vs [0°, 360°]
+    overwrite:
+        Whether to overwrite the output file if it already exists.
+    """
+    from ._convert import convert_normalize_longitude
+
+    convert_normalize_longitude(
+        input_file = input_file,
+        output_file = output_file,
+        longitude_convention=longitude_convention,
+        overwrite=overwrite
+    )
+
+
+def cli_convert_pad(
+    input_file: pathlib.Path,
+    output_file: pathlib.Path,
+    *,
+    pad_longitude: Annotated[bool, Parameter(negative=False)] = False,
+    pad_latitude: Annotated[bool, Parameter(negative=False)] = False,
+    pad_method_longitude: Annotated[PadMethodLon, Parameter(show_choices=False)] = "auto",
+    pad_method_latitude: PadMethodLat = "fade",
+    pad_side_latitude: PadSideLat = "north",
+    overwrite: Annotated[bool, Parameter(negative=False)] = False,
+) -> None:
+    """add padding values around the borders of the dataset.
+
+    Operations include:
+    - Longitude padding wraps values around the antimeridian (±180° or 0°/360°)
+    - Latitude padding extends coverage to include poles (-90° to 90°)
+
+    Parameters
+    ----------
+    input_file:
+        Path to the input dataset file (e.g., NetCDF, zarr).
+    output_file:
+        Path to save the normalized dataset.
+    pad_longitude:
+        Whether to pad longitude coordinates to wrap around the antimeridian.
+    pad_latitude:
+        Whether to pad latitude coordinates to include the poles.
+    pad_method_longitude:
+        Method for padding longitudes ('auto' or positive integer).
+    pad_method_latitude:
+        Method for padding latitudes
+    pad_side_latitude:
+        Whether to pad north or south pole.
+    overwrite:
+        Whether to overwrite the output file if it already exists.
+
+    Notes
+    -----
+    For the longitude padding the dataset is automatically converted to [-180°, 180°]
+    For the latitude padding, the extremities are strictly set to [-90°, 90°]. The extrapolation methods for latitudes are:
+        `median`: Fill with `nanmedian` of boundary row.
+        `fade`: we blend the boundary row into `nanmedian` towards the poles
+    """
+    from ._convert import convert_pad
+
+    convert_pad(
+        input_file=input_file,
+        output_file=output_file,
+        pad_longitude=pad_longitude,
+        pad_latitude=pad_latitude,
+        method_longitude=pad_method_longitude,
+        method_latitude=pad_method_latitude,
+        side=pad_side_latitude,
+        overwrite=overwrite
     )
 
 
