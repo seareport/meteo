@@ -26,15 +26,18 @@ def get_base_sflux_ds(grib_ds: xr.Dataset):
     time = grib_ds.time.values[0]
     year, month, day = pd.to_datetime(time).year, pd.to_datetime(time).month, pd.to_datetime(time).day
     lon = grib_ds.longitude.values
-    lat = grib_ds.latitude.values  # flip to south->north as in pyschism
+    lat = grib_ds.latitude.values[::-1] # flip to south->north as in pyschism
     nx_grid, ny_grid = np.meshgrid(lon, lat)
 
     ds = xr.Dataset(
         coords={
-            "time": ("time", grib_ds.time.values, {"long_name": "Time", "standard_name": "time", "base_date": [year, month, day, 0]}),
-            "lon": (("ny_grid", "nx_grid"), nx_grid, {"long_name": "Longitude", "standard_name": "longitude", "units": "degrees_east"}),
-            "lat": (("ny_grid", "nx_grid"), ny_grid, {"long_name": "Latitude", "standard_name": "latitude", "units": "degrees_north"}),
-        }
+            "time": ("time", grib_ds.time.values, {**ATTRIBUTES["time"], "base_date": [year, month, day, 0]}),
+        },
+        data_vars={
+            "lon": (("ny_grid", "nx_grid"), nx_grid, ATTRIBUTES["lon"]),
+            "lat": (("ny_grid", "nx_grid"), ny_grid, ATTRIBUTES["lat"]),
+        },
+        attrs={"Conventions": "CF-1.0"},
     )
     return ds
 
@@ -71,7 +74,7 @@ def stack_step_time(ds: xr.Dataset) -> xr.Dataset:
 def get_sflux_ds(grib_ds: xr.Dataset, grib_var: str, sflux_var: str) -> xr.Dataset:
     logger.info(f"convert {grib_var} to {sflux_var}")
     ds = get_base_sflux_ds(grib_ds)
-    data = grib_ds[grib_var].values
+    data = grib_ds[grib_var].values[:, ::-1, :]
     ds[sflux_var] = (("time", "ny_grid", "nx_grid"), data, ATTRIBUTES[sflux_var])
     return ds
 
@@ -108,10 +111,10 @@ def era5_to_sflux(file: Path, group: str, output_dir: Path, overwrite: bool) -> 
 
     # convert to sflux format (SCHISM inputs)
     schism_ds = _get_era5(grib_ds, output_dir, group, overwrite)
-    filename = output_dir / f"sflux_{group}_1.nc"
+    filename = output_dir / f"sflux_{file.stem}_{group}.nc"
     write_file(schism_ds, filename, overwrite=overwrite)
 
     # add simple text file schism_input.txt in the output directory (see SCHISM manual)
-    schism_input_file = output_dir / "schism_input.txt"
+    schism_input_file = output_dir / "sflux_inputs.txt"
     if overwrite or not schism_input_file.exists():
         schism_input_file.write_text("&sflux_inputs\n/\n")

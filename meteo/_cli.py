@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import os
 import pathlib
 import platform
@@ -8,6 +9,7 @@ from typing import Annotated
 from typing import get_args
 
 import platformdirs
+from cyclopts import Group
 from cyclopts import Parameter
 from cyclopts import validators
 from cyclopts.types import ResolvedDirectory
@@ -59,6 +61,7 @@ _DEFAULT_CACHE_MIR_DIR = _DEFAULT_CACHE_DIR / "mir"
 _DEFAULT_CACHE_METVIEW_DIR = _DEFAULT_CACHE_DIR / "metview"
 
 _YEAR_VALIDATOR = Parameter(validator=validators.Number(gte=1900))
+_TIME_RANGE_VALIDATOR = Group("Time range", validator=validators.MutuallyExclusive())
 
 def cli_download_o1280(
     year: Annotated[int, _YEAR_VALIDATOR],
@@ -264,50 +267,75 @@ def cli_convert_f1280_to_sflux():
 
 def cli_download_era5(
     *,
-    start_date: Annotated[str, Parameter(help="Start date YYYYMMDD")],
-    duration: Annotated[str | None, Parameter(help="ISO 8601 duration, e.g. P1M, P7D")] = "P1M",
+    start_date: datetime.datetime,
+    duration: Annotated[str, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
+    end_date: Annotated[datetime.datetime, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
     variable: Annotated[L_ERA5_Variables, Parameter(show_choices=True)] = None,
     output_dir: ResolvedDirectory = _DEFAULT_ERA5_DIR,
 ) -> None:
     """
-    Download ERA5 from ECMWF using the [new `ecmwf-datastores-client` API](https://ecmwf.github.io/ecmwf-datastores-client/) (async downloads)
+    Download ERA5 from ECMWF using the
+    [new `ecmwf-datastores-client` API](https://ecmwf.github.io/ecmwf-datastores-client/)
+    (async downloads)
 
-    The ERA5 request downloads by default variables for hydrodynamic baroclinic simulations, divided in two groups of **different `stepType`** values:
+    The ERA5 request downloads by default variables for hydrodynamic baroclinic simulations,
+    divided in two groups of **different `stepType`** values:
 
-    | `stepType`  | Variables                         | Time dimension                   |
+    | `stepType`  | Variables                         | Time dimension                  |
     |------------|-----------------------------------|----------------------------------|
     | `instant`  | `u10`, `v10`, `d2m`, `t2m`, `msl` | Hourly (`time` of length 720) |
     | `avg`      | `avg_tprate`, `avg_sdswrf`, `avg_sdlwrf` | 12-hour forecast steps from twice-daily reference times (61 `time` × 12 `step`) |
 
     The request is thus split into two sub-requests to avoid having a unique dataset with mixed `stepType`, inducing errors when opening the full dataset with xarray.
 
+    Time range
+    ----------
+     * ``--start-date`` is the first day of data to download.
+     * ``--end-date`` is **exclusive**: data up to (but not including) that date is downloaded.
+     * All hourly timesteps (00:00–23:00) of each included day are retrieved.
+     * Instead of ``--end-date``, you can pass ``--duration`` as an ISO 8601 string. The exclusive end date is then computed as ``start_date + duration``.
+
+    Examples
+    ---------
+    The following command is the same:
+    ```
+    meteo download era5 --start-date 20250101 --end-date 20250201       # all of January 2025
+    meteo download era5 --start-date 20250101 --duration P1M            # same: 2025-01-01 to 2025-01-31 23:00:00
+    ```
+    and creates 2 output files:
+     * ``{output_dir}/era5_20250101_P1M_avg.grib``
+     * ``{output_dir}/era5_20250101_P1M_instant.grib``
+
+    With `output_dir` = `_DEFAULT_ERA5_DIR` a machine specific directory that can be changed with the `--output_dir` flag.
+
     Parameters
     ----------
-    start_date : str
-        Start date of the data to download in YYYYMMDD format.
+    start_date : datetime.datetime
+        Start date in YYYYMMDD format
+    end_date : datetime.datetime
+        Last day of data to download, **exclusive** (YYYYMMDD format).
+        Cannot be called if ``duration`` is provided.
     duration : str
-        ISO 8601 string for period to download (e.g., `PnD`, `PnW`, `PnM`, `PnY` and combinations like `P1M15D`)
+        ISO 8601 string for period to download (e.g., `PnD`, `PnW`, `PnM`, `PnY` and combinations like `P1M15D`).
+        Cannot be called if ``end_date`` is provided.
     variable : str
-        ERA5 variables, by default all are downloaded (~11 Gb).
+        ERA5 variables, by default all are downloaded.
     output_dir : Path, default: system-specific
         Output directory for downloaded files.
         Defaults to `_DEFAULT_ERA5_DIR` which is a platform-specific location.
-
-    Notes
-    -----
-    Output files are saved by default in the `_DEFAULT_ERA5_DIR` directory that can be changed with the --output_dir flag.
-    For example, downloading ERA5 for January 2024 creates 2 files:
-     * ``{output_dir}/era5_{start:%Y%m%d}_{end:%Y%m%d}_avg.grib``
-     * ``{output_dir}/era5_{start:%Y%m%d}_{end:%Y%m%d}_instant.grib``
     """
     if variable is None:
         variable = list(get_args(L_ERA5_Variables))
     from meteo._ecmwf import download_era5
+    from meteo._utils import compute_end_date
+
+    if duration:
+        end_date = compute_end_date(start_date, duration)
 
     download_era5(
         variable=variable,
         start_date=start_date,
-        duration=duration,
+        end_date=end_date,
         output_dir=output_dir,
     )
 

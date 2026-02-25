@@ -14,7 +14,7 @@ from ._literals import L_ERA5_Instant_Variables
 from ._literals import L_ERA5_Variables
 from ._literals import L_Grids
 from ._literals import L_Months
-from ._utils import date_range_to_ymd
+from ._utils import compute_duration_tag
 from ._utils import get_grib_path
 
 logger = logging.getLogger(__name__)
@@ -66,29 +66,52 @@ def download_o1280_month(
 
 def download_era5(
     variable: L_ERA5_Variables,
-    start_date: datetime.date,
-    duration: str,
+    start_date: datetime.datetime,
+    end_date: datetime.datetime | None,
     output_dir: pathlib.Path,
 ) -> None:
+    """
+    Download ERA5 single-level reanalysis data from the ECMWF datastore.
+
+    Submits one async request per ``stepType`` group (``instant`` and ``avg``)
+    and blocks until each download completes.
+
+    Parameters
+    ----------
+    variable : L_ERA5_Variables
+        ERA5 variable name(s) to download. Variables are automatically split
+        into ``instant`` and ``avg`` sub-requests based on their ``stepType``.
+    start_date : datetime.datetime
+        First day of the requested period.
+    end_date : datetime.datetime
+        End of the requested period, **exclusive**. Data is downloaded for
+        all days in ``[start_date, end_date)``, i.e. up to but not including
+        ``end_date``. Passed directly to the ECMWF API ``date`` field.
+    output_dir : pathlib.Path
+        Directory where GRIB files are written. Created if it does not exist.
+
+    Raises
+    ------
+    ValueError
+        If the date range is empty (``end_date <= start_date``).
+    """
     logger.debug("Downloading ERA5: %s", locals())
-    import datetime
     from ecmwf.datastores import Client
-    from ._utils import parse_iso_duration
+    from meteo._utils import inclusive_to_exclusive
 
     output_dir.mkdir(parents=True, exist_ok=True)
     client = Client()
     collection_id = "reanalysis-era5-single-levels"
 
-    _start_date = datetime.datetime.strptime(start_date, "%Y%m%d").date()
-    _end_date = parse_iso_duration(duration, _start_date) - datetime.timedelta(days=1)
-    if _end_date < _start_date:
-        raise ValueError(f"Date range is empty: {_start_date} to {parse_iso_duration(duration, _start_date)} (exclusive)")
+    end_date_exclusive = inclusive_to_exclusive(end_date)
+    if end_date_exclusive < start_date:
+        raise ValueError(f"Date range is empty: {start_date} to {end_date_exclusive} (exclusive)")
 
     request = {
         "product_type": ["reanalysis"],
         "data_format": "grib",
         "download_format": "unarchived",
-        "date" : f"{_start_date}/{_end_date}",
+        "date" : f"{start_date.date()}/{end_date_exclusive.date()}",
         "time": [f"{h:02d}:00" for h in range(24)],
     }
 
@@ -104,7 +127,8 @@ def download_era5(
         instant_request = {**request, "variable": instant_vars}
         remotes.append(("instant", client.submit(collection_id, instant_request)))
 
+    duration = compute_duration_tag(start_date, end_date)
     for step_type, remote in remotes:
-        target = output_dir / f"era5_{_start_date:%Y%m%d}_{duration}_{step_type}.grib"
+        target = output_dir / f"era5_{start_date:%Y%m%d}_{duration}_{step_type}.grib"
         logger.info("Waiting & downloading %s -> %s", step_type, target)
         remote.download(str(target))  # blocks until this job is done

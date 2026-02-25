@@ -1,9 +1,13 @@
 import datetime
 import logging
 import pathlib
-import re
 
+import isoduration
 import xarray as xr
+from dateutil.relativedelta import relativedelta
+from isoduration.types import DateDuration
+from isoduration.types import Duration
+from isoduration.types import TimeDuration
 
 from ._literals import L_ECMWF_Variables
 from ._literals import L_Grids
@@ -276,45 +280,31 @@ def write_file(ds: xr.Dataset, output_file: pathlib.Path, overwrite: bool) -> No
     if out_suffix == ".zarr":
         ds.to_zarr(output_file, mode="w")
     elif out_suffix == ".nc":
-        ds.to_netcdf(output_file)
+        base_date = ds.time.attrs["base_date"]
+        encoding = {
+            "time": {
+                "units": f"days since {base_date[0]}-{base_date[1]:02d}-{base_date[2]:02d}",
+                "dtype": "float32",
+            }
+        }
+        ds.to_netcdf(output_file, encoding=encoding)
     else:
         raise NotImplementedError(f"export for {out_suffix} is not available")
 
 
-def parse_iso_duration(duration_str: str, start: datetime.date) -> datetime.date:
-    pattern = r"P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)W)?(?:(\d+)D)?"
-    m = re.fullmatch(pattern, duration_str)
-    if not m or not any(m.groups()):
-        raise ValueError(f"Invalid ISO 8601 duration: {duration_str}")
-
-    years = int(m.group(1) or 0)
-    months = int(m.group(2) or 0)
-    weeks = int(m.group(3) or 0)
-    days = int(m.group(4) or 0)
-
-    # Add years and months
-    new_month = start.month + months
-    new_year = start.year + years + (new_month - 1) // 12
-    new_month = (new_month - 1) % 12 + 1
-    # Clamp day to valid range for the new month
-    import calendar
-    max_day = calendar.monthrange(new_year, new_month)[1]
-    new_day = min(start.day, max_day)
-    end = datetime.date(new_year, new_month, new_day)
-
-    # Add weeks and days
-    end += datetime.timedelta(weeks=weeks, days=days)
-    return end
+def compute_end_date(start: datetime.datetime, str_duration: str) -> datetime.date:
+    duration = isoduration.parse_duration(str_duration)
+    return start + duration
 
 
-def date_range_to_ymd(
-    start: datetime.date, end: datetime.date
-) -> tuple[list[str], list[str], list[str]]:
-    years, months, days = set(), set(), set()
-    current = start
-    while current <= end:
-        years.add(f"{current.year}")
-        months.add(f"{current.month:02d}")
-        days.add(f"{current.day:02d}")
-        current += datetime.timedelta(days=1)
-    return sorted(years), sorted(months), sorted(days)
+def compute_duration_tag(start: datetime.date, end: datetime.date) -> str:
+    delta = end - start
+    duration = Duration(
+        DateDuration(years=0, months=0, days=delta.days, weeks=0),
+        TimeDuration(hours=0, minutes=0, seconds=delta.seconds),
+    )
+    return isoduration.format_duration(duration)
+
+
+def inclusive_to_exclusive(date_inclusive: datetime.datetime)-> datetime.datetime:
+    return date_inclusive - isoduration.parse_duration("PT1H")

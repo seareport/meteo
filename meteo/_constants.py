@@ -51,7 +51,7 @@ ATTRIBUTES = {
     "time": {
         "long_name": "Time",
         "standard_name": "time",
-        "axis": "T",  # Optional but helpful
+        # "axis": "T",  # Optional but helpful
     },
     "lon": {
         "long_name": "Longitude",
@@ -86,7 +86,7 @@ ATTRIBUTES = {
     "spfh": {
         "long_name": "Surface Specific Humidity (2m AGL)",
         "standard_name": "specific_humidity",
-        "units": "kg kg-1",
+        "units": "1",
     },
     "prate": {
         "long_name": "Surface Precipitation Rate",
