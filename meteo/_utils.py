@@ -272,7 +272,7 @@ def _pad_lat_single_side(
         return xr.concat([ds, padded_block], dim=lat_name)
 
 
-def write_file(ds: xr.Dataset, output_file: pathlib.Path, overwrite: bool) -> None:
+def write_file(ds: xr.Dataset, output_file: pathlib.Path, overwrite: bool, encoding = None) -> None:
     if not overwrite and output_file.exists():
         raise FileExistsError(f"{output_file} already exists")
 
@@ -280,13 +280,6 @@ def write_file(ds: xr.Dataset, output_file: pathlib.Path, overwrite: bool) -> No
     if out_suffix == ".zarr":
         ds.to_zarr(output_file, mode="w")
     elif out_suffix == ".nc":
-        base_date = ds.time.attrs["base_date"]
-        encoding = {
-            "time": {
-                "units": f"days since {base_date[0]}-{base_date[1]:02d}-{base_date[2]:02d}",
-                "dtype": "float32",
-            }
-        }
         ds.to_netcdf(output_file, encoding=encoding)
     else:
         raise NotImplementedError(f"export for {out_suffix} is not available")

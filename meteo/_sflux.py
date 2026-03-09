@@ -52,8 +52,7 @@ def compute_spfh(ds: xr.Dataset) -> xr.DataArray:
     """
     var = list(ds.variables)
     if "d2m" not in var or "msl" not in var:
-        logger.warning("Skipping: Both 'd2m' and 'msl' variables are required to compute specific humidity.")
-        return ds
+        raise ValueError("Skipping: Both 'd2m' and 'msl' variables are required to compute specific humidity.")
     d2m = ds['d2m'] # 2m dewpoint temperature in Kelvin
     msl = ds['msl'] # mean sea level pressure in Pa -> convert to hPa
     Td = d2m - 273.15
@@ -112,7 +111,16 @@ def era5_to_sflux(file: Path, group: str, output_dir: Path, overwrite: bool) -> 
     # convert to sflux format (SCHISM inputs)
     schism_ds = _get_era5(grib_ds, output_dir, group, overwrite)
     filename = output_dir / f"sflux_{file.stem}_{group}.nc"
-    write_file(schism_ds, filename, overwrite=overwrite)
+
+    base_date = schism_ds.time.attrs["base_date"]
+    encoding = {
+        "time": {
+            "units": f"days since {base_date[0]}-{base_date[1]:02d}-{base_date[2]:02d}",
+            "dtype": "float32",
+        }
+    }
+
+    write_file(schism_ds, filename, overwrite=overwrite, encoding=encoding)
 
     # add simple text file schism_input.txt in the output directory (see SCHISM manual)
     schism_input_file = output_dir / "sflux_inputs.txt"

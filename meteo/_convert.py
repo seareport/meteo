@@ -83,7 +83,7 @@ def convert_pad(
     if pad_latitude:
         ds = auto_pad_lat(
             ds,
-            method = method_latitude,
+            method_latitude = method_latitude,
             side = side
         )
 
