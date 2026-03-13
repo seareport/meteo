@@ -76,7 +76,7 @@ def convert_pad(
         if not isinstance(method_longitude, int) or method_longitude <= 0:
             raise ValueError("pad_width must be 'auto' or a positive integer.")
 
-    ds = xr.open_dataset(input_file)
+    ds = xr.open_dataset(input_file, decode_cf=False)
     if pad_longitude:
         ds = auto_pad_lon(ds, method_longitude)
 

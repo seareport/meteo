@@ -109,3 +109,15 @@ ATTRIBUTES = {
 HYCOM_MAX_DEPTH_INDEX = 39
 POTENTIAL_TEMP_CORRECTION = 1.00024
 SUB_SAMPLE = 1
+HYCOM_ARGS = dict(
+    unlimited_dims="time",
+    encoding={
+        "temperature": {
+            "dtype": "h",
+            "_FillValue": -30000.0,
+            "scale_factor": 0.001,
+            "add_offset": 20.0,
+            "missing_value": -30000.0,
+        },
+    },
+)

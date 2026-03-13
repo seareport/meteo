@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
+from ._constants import HYCOM_ARGS
 from ._constants import HYCOM_MAX_DEPTH_INDEX
 from ._constants import POTENTIAL_TEMP_CORRECTION
 from ._constants import SUB_SAMPLE
@@ -143,7 +144,7 @@ def download_hycom(
 
     ptemp = ConvertTemp(salt, temp, dep)
     # drop water_temp variable and add new temperature variable
-    ds = ds.drop("water_temp")
+    ds = ds.drop_vars("water_temp")
     ds["temperature"] = (["time", "depth", "lat", "lon"], ptemp)
     ds.temperature.attrs = {
         "long_name": "Sea water potential temperature",
@@ -161,6 +162,6 @@ def download_hycom(
     logger.info("Start writing nc file ...")
     foutname = f'{output_dir}/hycom_{date.strftime("%Y%m%d")}.nc'
 
-    ds.to_netcdf(foutname, "w", unlimited_dims="time")
+    ds.to_netcdf(foutname, "w", **HYCOM_ARGS)
     ds.close()
     logger.info(f"It took {time()-t0} seconds to write nc file: {foutname}")
