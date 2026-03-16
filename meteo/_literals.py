@@ -37,6 +37,7 @@ L_CMEMS_Dataset = Literal[
     "cmems_mod_glo_phy", # Global Ocean Physics Analysis and Forecast
     # "cmems_mod_glo_wav", # Global Ocean Waves Analysis and Forecast
 ]
+L_CMEMS_export_format = Literal["cmems", "hycom"]
 Lon_Convention = Literal["180", "360"]
 PadMethodLon = Union[Literal["auto"], int]
 PadMethodLat = Literal["median", "fade"]

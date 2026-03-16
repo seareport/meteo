@@ -16,6 +16,7 @@ from cyclopts.types import ResolvedDirectory
 from cyclopts.types import ResolvedExistingDirectory
 
 from ._literals import L_6Hours
+from ._literals import L_CMEMS_export_format
 from ._literals import L_Days
 from ._literals import L_ECMWF_Variables
 from ._literals import L_ERA5_sflux_groups
@@ -385,6 +386,7 @@ def cli_hycom(
     year: Annotated[int, _YEAR_VALIDATOR],
     month: L_Months,
     day: Annotated[L_Days, Parameter(show_choices=False)],
+    *,
     output_dir: Path = _DEFAULT_HYCOM_DIR,
     normalize: bool = True
 ):
@@ -430,8 +432,10 @@ def cli_cmems(
     month: L_Months,
     day: Annotated[L_Days, Parameter(show_choices=False)],
     hour: L_6Hours = 0,
+    *,
     dataset: str = "cmems_mod_glo_phy",
-    output_dir: Path = _DEFAULT_CMEMS_DIR
+    output_dir: Path = _DEFAULT_CMEMS_DIR,
+    output_format: L_CMEMS_export_format = "cmems"
 ):
     """
     Download CMEMS data using the `copernicusmarine` python API
@@ -452,6 +456,9 @@ def cli_cmems(
     output_dir : Path, default: system-specific
         Output directory for downloaded files.
         Defaults to `_DEFAULT_CMEMS_DIR` which is a platform-specific location.
+    output_format : str
+        Format of the exported netcdf.
+        `hycom` mimics the HYCOM model file format and fits SCHISM hotstart pipeline.
 
     Notes
     -----
@@ -475,4 +482,5 @@ def cli_cmems(
         hour=hour,
         dataset=dataset,
         output_dir=output_dir,
+        output_format=output_format
     )
