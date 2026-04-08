@@ -11,7 +11,10 @@ import xarray as xr
 from ._constants import ATTRIBUTES
 from ._constants import ERA5_REQUIRED_VARS
 from ._constants import ERA5_SFLUX_MAPPING
+from ._constants import F1280_SFLUX_MAPPING
+from ._utils import auto_pad_lat
 from ._utils import auto_pad_lon
+from ._utils import get_grib_path
 from ._utils import write_file
 
 logger = logging.getLogger(__name__)
@@ -63,22 +66,36 @@ def compute_spfh(ds: xr.Dataset) -> xr.DataArray:
 
 
 def stack_step_time(ds: xr.Dataset) -> xr.Dataset:
-    ds_out = ds.stack(valid=("time", "step"))
-    ds_out = ds_out.swap_dims({"valid": "valid_time"})
-    ds_out = ds_out.dropna(dim="valid_time", how="all")
-    ds_out = ds_out.drop_vars(["time", "step", "valid"]).rename({"valid_time": "time"})
+    times = ds.time.values
+    steps = ds.step.values
+    valid_times = (times[:, None] + steps[None, :]).ravel()
+
+    results = []
+    for t in range(ds.sizes["time"]):
+        for s in range(ds.sizes["step"]):
+            sel = ds.isel(time=t, step=s).load()
+            vt = valid_times[t * ds.sizes["step"] + s]
+            sel = sel.expand_dims(time=[vt])
+            results.append(sel)
+
+    ds_out = xr.concat(results, dim="time", coords="all")
     return ds_out.transpose("time", "latitude", "longitude")
 
 
-def get_sflux_ds(grib_ds: xr.Dataset, grib_var: str, sflux_var: str) -> xr.Dataset:
+def get_sflux_ds(
+    grib_ds: xr.Dataset,
+    grib_var: str,
+    sflux_var: str,
+) -> xr.Dataset:
     logger.info(f"convert {grib_var} to {sflux_var}")
-    ds = get_base_sflux_ds(grib_ds)
     data = grib_ds[grib_var].values[:, ::-1, :]
+    ds = get_base_sflux_ds(grib_ds)
     ds[sflux_var] = (("time", "ny_grid", "nx_grid"), data, ATTRIBUTES[sflux_var])
+
     return ds
 
 
-def _get_era5(grib_ds: xr.Dataset, outdir: Path, group: str, overwrite: bool):
+def _get_era5(grib_ds: xr.Dataset, group: str):
     var_map = ERA5_SFLUX_MAPPING[group]
     if group in ["prc", "rad"]:
         grib_ds = stack_step_time(grib_ds)
@@ -88,6 +105,44 @@ def _get_era5(grib_ds: xr.Dataset, outdir: Path, group: str, overwrite: bool):
     datasets = [get_sflux_ds(grib_ds, g, s) for g, s in var_map.items()]
     merged = xr.merge(datasets, compat="override")
 
+    return merged
+
+
+def _get_f1280(files: xr.Dataset, group: str):
+    var_map = F1280_SFLUX_MAPPING[group]
+    file_by_var = {f.stem.split(".")[-1]: f for f in files}
+    is_accumulated = group in ["prc", "rad"]
+
+    if group == "air" and "sh2" not in file_by_var:
+        logger.info("'sh2' file not found, computing from '2d' and 'msl'")
+        ds_2d = xr.open_dataset(file_by_var["2d"])
+        ds_msl = xr.open_dataset(file_by_var["msl"])
+        merged = xr.merge([ds_2d, ds_msl], compat="override")
+        sh2_ds = compute_spfh(merged)[["sh2"]]
+        del ds_2d, ds_msl, merged
+
+    datasets_ = []
+    for grib_var, schism_var in var_map.items():
+        if grib_var == "sh2" and "sh2" not in file_by_var:
+            grib_ds = sh2_ds
+        else:
+            grib_ds = xr.open_dataset(file_by_var[grib_var])
+        if is_accumulated:
+            grib_ds = grib_ds.diff(dim="step")
+        grib_ds = grib_ds.load() # materialize before reindexing (cfgrib vectorized indexing blows up the memory)
+        grib_ds = stack_step_time(grib_ds)
+        grib_ds = auto_pad_lon(grib_ds, method_longitude="auto")
+        grib_ds = auto_pad_lat(grib_ds, method_latitude="median", side="north")
+        ds = get_sflux_ds(
+            grib_ds,
+            grib_var,
+            schism_var,
+        )
+
+        if grib_var in ("strd", "ssrd"):
+            ds[schism_var] = ds[schism_var] / 3600
+        datasets_.append(ds)
+    merged = xr.merge(datasets_,compat="override")
     return merged
 
 
@@ -105,12 +160,88 @@ def era5_to_sflux(file: Path, group: str, output_dir: Path, overwrite: bool) -> 
     grib_ds = xr.open_dataset(file)
     check_required_variables(grib_ds, group)
 
-    # pad longitude by default -> consider removing this when implementing regional models
     grib_ds = auto_pad_lon(grib_ds, method_longitude="auto")
 
-    # convert to sflux format (SCHISM inputs)
-    schism_ds = _get_era5(grib_ds, output_dir, group, overwrite)
+    schism_ds = _get_era5(grib_ds, group)
     filename = output_dir / f"sflux_{file.stem}_{group}.nc"
+
+    base_date = schism_ds.time.attrs["base_date"]
+    encoding = {
+        "time": {
+            "units": f"days since {base_date[0]}-{base_date[1]:02d}-{base_date[2]:02d}",
+            "dtype": "float32",
+        }
+    }
+
+    write_file(schism_ds, filename, overwrite=overwrite, encoding=encoding)
+
+    # add simple text file schism_input.txt in the output directory (see SCHISM manual)
+    schism_input_file = output_dir / "sflux_inputs.txt"
+    if overwrite or not schism_input_file.exists():
+        schism_input_file.write_text("&sflux_inputs\n/\n")
+
+
+def f1280_to_sflux(
+    group: str,
+    year: int,
+    month: int,
+    f1280_dir: Path,
+    output_dir: Path,
+    overwrite: bool,
+) -> None:
+    """
+    Convert per-variable F1280 GRIB files to SCHISM sflux NetCDF.
+
+    The files needed for the F1280 GRIB files are:
+        * For 'air': [msl, u10, v10, t2m, sh2 (or 2d+msl)]
+        * For 'rad': [ssrd, strd]
+        * For 'prc': [tp]
+
+    Parameters
+    ----------
+    group : str
+        Variable group: 'air', 'rad', or 'prc'.
+    year : int
+        Year of the data to process.
+    month : int
+        Month of the data to process.
+    output_dir : Path
+        Output directory for sflux NetCDF files.
+    overwrite : bool
+        Whether to overwrite existing output files.
+    """
+    variables = F1280_SFLUX_MAPPING[group].keys()
+
+    files = []
+    missing = []
+    for var in variables:
+        fpath = f1280_dir / get_grib_path(var, year, month, "F1280")
+        if fpath.exists():
+            files.append(fpath)
+        else:
+            missing.append(var)
+
+    if "sh2" in missing:
+        logger.info("'sh2' file not found, will attempt to compute from '2d' and 'msl'")
+        missing.remove("sh2")
+        for fallback_var in ["2d", "msl"]:
+            fb_path = f1280_dir / get_grib_path(fallback_var, year, month, "F1280")
+            if not fb_path.exists():
+                raise FileNotFoundError(
+                    f"Neither 'sh2' nor '{fallback_var}' found in {fb_path}. "
+                    "Need either 'sh2' directly or both '2d' and 'msl' to compute it."
+                )
+            if fb_path not in files:
+                files.append(fb_path)
+
+    if missing:
+        raise FileNotFoundError(f"Missing F1280 files for group '{group}': {missing}")
+
+    logger.debug("Saving to: %s", output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    schism_ds = _get_f1280(files, group)
+    filename = output_dir / f"sflux_F1280.{year}.{month:02d}_{group}.nc"
 
     base_date = schism_ds.time.attrs["base_date"]
     encoding = {

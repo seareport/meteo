@@ -7,7 +7,7 @@ L_Days = Literal[
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
 ]
 L_6Hours = Literal[0, 6, 12, 18]
-L_ECMWF_Variables = Literal["msl", "u10", "v10", "t2m", "sh2", "ssrd", "strd", "tp"]
+L_ECMWF_Variables = Literal["msl", "u10", "v10", "t2m", "sh2", "ssrd", "strd", "tp", "2d"]
 L_ERA5_Variables = Literal[
     "10m_u_component_of_wind",
     "10m_v_component_of_wind",
@@ -31,7 +31,7 @@ L_ERA5_Avg_Variables = Literal[
     "mean_total_precipitation_rate"
 ]
 
-L_ERA5_sflux_groups = Literal["air", "rad", "prc"]
+L_sflux_groups = Literal["air", "rad", "prc"]
 
 L_CMEMS_Dataset = Literal[
     "cmems_mod_glo_phy", # Global Ocean Physics Analysis and Forecast

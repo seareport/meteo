@@ -22,6 +22,8 @@ def get_grib_path(variable: L_ECMWF_Variables, year: int, month: L_Months, grid:
     # XXX: If this path structure changes, update the docstring examples in:
     #      - cli_download_o1280() in _cli.py
     #      - cli_convert_o1280_to_f1280() in _cli.py
+    #      - download_o1280_month() in _ecmwf.py
+    #      - f1280_to_sflux() in _sflux.py
     path = f"grib/{year}/{grid[0].lower()}.{year}.{month:02d}.{variable}.grib"
     return path
 
@@ -103,8 +105,7 @@ def detect_name(ds: xr.Dataset, var = "longitude") -> str:
 
 def detect_pad_width(ds: xr.Dataset, lon_name: str) -> int:
     import numpy as np
-    ds = ds.sortby([lon_name])
-    lon = ds[lon_name].values
+    lon = np.sort(ds[lon_name].values)
 
     if ds[lon_name].ndim != 1:
         raise ValueError(f"Longitude {lon_name} must be 1D for padding.")
@@ -151,7 +152,30 @@ def pad_lon(ds: xr.Dataset, pad_width: int, lon_name: str = "longitude") -> xr.D
     return padded
 
 def auto_pad_lon(ds: xr.Dataset, method_longitude: str | int) -> xr.Dataset:
-    # convert to 180 convention
+    """
+    Pad a dataset along longitude, first normalizing coords to [-180, 180].
+
+    This is the main entry point for longitude padding. It:
+      1. Detects the longitude coordinate name in the dataset.
+      2. Normalizes longitudes to the [-180, 180] range (required by
+         ``pad_lon``, which hardcodes 180 in its wrap arithmetic).
+      3. Determines the pad width, either automatically from the grid
+         resolution or from an explicit integer.
+      4. Delegates to ``pad_lon`` for the actual padding and coordinate fix-up.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        xarray Dataset to pad.
+    method_longitude : str or int
+        method to determine pad width. Options:
+         - "auto": Detect pad width based on longitude resolution and distance to the poles.
+         - int: Use the provided integer as pad width.
+
+    Returns
+    -------
+    Padded xarray Dataset.
+    """
     lon_name = detect_name(ds, "longitude")
     ds_norm = normalize_longitude(ds, lon_name, to_360 = False)
     if method_longitude == "auto":
@@ -168,31 +192,64 @@ def pad_lat(
     ds: xr.Dataset,
     lat_name: str = "latitude",
     method: str = "fade",
-    side: str = "north"
+    side: str = "north",
 ) -> xr.Dataset:
-    """
-    Pad dataset to the poles (±90°) based on detected latitude resolution
-
-    method:
-        "fade" : Blend boundary row into nanmedian toward pole
-        "median" : Fill with nanmedian of boundary row.
-    """
     import numpy as np
-    ds = ds.sortby(lat_name)
+    if side not in ("south", "north", "both"):
+        raise ValueError(f"side={side!r}, must be one of 'south', 'north', 'both'")
+
+    original_dims = {var: ds[var].dims for var in ds.data_vars}
     lat = ds[lat_name].values
+    ascending = lat[-1] > lat[0]  # True: south to north direction
 
-    diffs = np.diff(lat)
-    result = ds.copy()
-    if side in ["south", "both"]:
-        result = _pad_lat_single_side(result, lat_name, diffs[0], method, side="south")
-    if side in ["north", "both"]:
-        result = _pad_lat_single_side(result, lat_name, diffs[-1], method, side="north")
-    if side not in ["south", "north", "both"]:
-        raise ValueError(f"Side is {side}, and should be one of `south`, `north`, `both`")
+    #   "south" pole lives at index 0 when ascending, index -1 when descending
+    #   "north" pole lives at index -1 when ascending, index 0 when descending
+    diffs = np.abs(np.diff(lat))
+    result = ds
 
-    return result.sortby(lat_name)
+    if side in ("south", "both"):
+        if ascending:
+            edge_idx = 0
+            lat_step = diffs[0]
+        else:
+            edge_idx = -1
+            lat_step = diffs[-1]
+        result = _pad_lat_single_side(result, lat_name, lat_step, method, pole=-90.0, edge_idx=edge_idx, ascending=ascending)
+
+    if side in ("north", "both"):
+        if ascending:
+            edge_idx = -1
+            lat_step = diffs[-1]
+        else:
+            edge_idx = 0
+            lat_step = diffs[0]
+        result = _pad_lat_single_side(result, lat_name, lat_step, method, pole=90.0, edge_idx=edge_idx, ascending=ascending)
+
+    for var, dims in original_dims.items():
+        if result[var].dims != dims:
+            result[var] = result[var].transpose(*dims)
+
+    return result
+
 
 def auto_pad_lat(ds: xr.Dataset, method_latitude: str, side: str) -> xr.Dataset:
+    """
+    Pad dataset to the poles (+/-90°) based on the detected resolution and on the latitude coordinates direction.
+
+    Parameters
+    ----------
+    ds : xr.Dataset
+        xarray Dataset to pad.
+    method_latitude : str
+        method to fill the padded latitudes. Options:
+         - "fade": Blend boundary row linearly toward nanmedian at the pole.
+         - "median": Fill with nanmedian of boundary row.
+    side : str
+        side to pad. Options:
+         - "south": Pad only the south side
+         - "north": Pad only the north side
+         - "both": Pad both sides
+    """
     lat_name = detect_name(ds, "latitude")
     return pad_lat(ds, lat_name, method_latitude, side=side)
 
@@ -202,45 +259,28 @@ def _pad_lat_single_side(
     lat_name: str,
     lat_step: float,
     method: str,
-    side: str,     # "south" or "north"
+    pole: float,
+    edge_idx: int,
+    ascending: bool,
 ) -> xr.Dataset:
     import numpy as np
     if lat_step <= 0 or np.isnan(lat_step):
         raise ValueError(f"Cannot detect valid latitude spacing from {lat_name}")
 
-    lat = ds[lat_name].values
-    if side == "south":
-        lat_edge = lat.min()
-        pole = -90.0
-        need_padding = lat_edge > pole
-    else:  # north
-        lat_edge = lat.max()
-        pole = 90.0
-        need_padding = lat_edge < pole
+    lat_edge = ds[lat_name].values[edge_idx]
 
-    if not need_padding:
+    if pole > 0 and lat_edge >= pole:
+        return ds
+    if pole < 0 and lat_edge <= pole:
         return ds
 
     n_extra = int(np.ceil(abs(pole - lat_edge) / lat_step))
-    if side == "south":
-        new_lats = lat_edge - lat_step * np.arange(1, n_extra + 1)
-    else:
-        new_lats = lat_edge + lat_step * np.arange(1, n_extra + 1)
-
+    new_lats = lat_edge + np.sign(pole - lat_edge) * lat_step * np.arange(1, n_extra + 1)
     new_lats[-1] = pole
-    new_lats = np.sort(new_lats)
+    new_lats = np.sort(new_lats) if ascending else np.sort(new_lats)[::-1]
 
-    if side == "south":
-        idx = 0
-    else:
-        idx = -1
-
-    edge_row = ds.isel({lat_name: idx})
-
-    medians = {
-        var: np.nanmedian(edge_row[var].values)
-        for var in ds.data_vars
-    }
+    edge_row = ds.isel({lat_name: edge_idx})
+    medians = {var: np.nanmedian(edge_row[var].values) for var in ds.data_vars}
 
     padded_rows = []
 
@@ -252,12 +292,10 @@ def _pad_lat_single_side(
             })
         elif method == "fade":  # linear fade from edge row to pole
             w = abs(lat_i - lat_edge) / abs(pole - lat_edge)
-            new_row = xr.Dataset()
-            for var in ds.data_vars:
-                orig = edge_row[var]
-                medianv = medians[var]
-                new_row[var] = (1 - w) * orig + w * medianv
-
+            new_row = xr.Dataset({
+                var: (1 - w) * edge_row[var] + w * medians[var]
+                for var in ds.data_vars
+            })
         else:
             raise ValueError(f"Unknown method '{method}'. Choose: fade, median")
 
@@ -266,7 +304,8 @@ def _pad_lat_single_side(
 
     padded_block = xr.concat(padded_rows, dim=lat_name)
 
-    if side == "south":
+    prepend = (edge_idx == 0)
+    if prepend:
         return xr.concat([padded_block, ds], dim=lat_name)
     else:
         return xr.concat([ds, padded_block], dim=lat_name)

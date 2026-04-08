@@ -1,17 +1,8 @@
 import logging
 from pathlib import Path
 
-import netCDF4 as nc
-import numpy as np
 import pandas as pd
-import xarray as xr
 
-from ._constants import CMEMS_TO_HYCOM_MAPPING
-from ._constants import HYCOM_ARGS
-from ._constants import HYCOM_COORD_ATTRS
-from ._constants import HYCOM_GLOBAL_ATTRS
-from ._constants import HYCOM_VAR_ATTRS
-from ._constants import HYCOM_VARS
 from ._literals import L_6Hours
 from ._literals import L_CMEMS_Dataset
 from ._literals import L_Days
@@ -80,42 +71,6 @@ def is_time_in_reanalysis(date):
         return True
 
 
-def convert_cmems_to_hycom(ds: xr.Dataset) -> xr.Dataset:
-    if "zos" in ds.data_vars:
-        ds = ds.rename_vars({"zos": "total_sea_level"})
-    rename_vars = {**CMEMS_TO_HYCOM_MAPPING, "total_sea_level": "surf_el"}
-    ds = ds.rename(rename_vars)
-    ds = ds[HYCOM_VARS]
-
-    if "time" not in ds.dims:
-        ds = ds.expand_dims("time")
-
-    # u/v=0 where temperature has valid data (wet points) ! important otherwise hotstart fails
-    wet_mask = ds["temperature"].notnull()
-    for var in ["water_u", "water_v"]:
-        ds[var] = ds[var].fillna(0.0).where(wet_mask)
-
-    # assign HYCOM attributes
-    for var in HYCOM_VARS:
-        ds[var].attrs = HYCOM_VAR_ATTRS[var]
-    for coord, attrs in HYCOM_COORD_ATTRS.items():
-        if coord in ds.coords:
-            ds[coord].attrs = attrs
-    ds.attrs = HYCOM_GLOBAL_ATTRS
-
-    return ds
-
-
-def fix_north_boundary(filepath):
-    with nc.Dataset(filepath, "r+") as ds:
-        temp = ds.variables["temperature"]
-        salt = ds.variables["salinity"]
-        fill_t = np.nanmedian(temp[:, :, -2, :])
-        fill_s = np.nanmedian(salt[:, :, -2, :])
-        temp[0, 0, -1, 0] = fill_t
-        salt[0, 0, -1, 0] = fill_s
-
-
 def download_cmems(
     year: int,
     month: L_Months,
@@ -123,7 +78,6 @@ def download_cmems(
     hour: L_6Hours,
     dataset: L_CMEMS_Dataset,
     output_dir: Path,
-    output_format:str
 ):
     """
     Parameters
@@ -134,14 +88,12 @@ def download_cmems(
         Month to download (1-12).
     day : int
         Day to download (1-31).
-    hour : int
+    hour :
         Hour to download (0/6/12 or 18)
     dataset : str
         Dataset from the Copernicus Marine Data Store. Ocean Physics (or 'cmems_mod_glo_phy') is the only one implemented for now.
     output_dir : Path
         Output directory for downloaded files.
-    output_format : str
-        export format for the netcdf file. Two options available: `cmems` (native/default) or `hycom`
     """
     import copernicusmarine as cm
 
@@ -165,12 +117,4 @@ def download_cmems(
         logger.info("Analysis and Forecast product data will be retrieved")
         ds = retrieve_cmems_phy_forecast_analysis(date)
 
-    if output_format == "cmems":
-        ds.to_netcdf(f"{output_dir}/{dataset}_{date.strftime('%Y%m%d_%H')}.nc")
-    elif output_format == "hycom":
-        ds = convert_cmems_to_hycom(ds)
-        outpath = f"{output_dir}/{dataset}_{date.strftime('%Y%m%d_%H')}_hycom.nc"
-        ds.to_netcdf(outpath, **HYCOM_ARGS)
-        fix_north_boundary(outpath)
-    else:
-        raise ValueError(f"format {output_format} not recognised. `cmems`/`hycom` only accepted")
+    ds.to_netcdf(f"{output_dir}/cmems_mod_glo_phy_{date.strftime('%Y%m%d_%H')}.nc")

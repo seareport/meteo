@@ -19,9 +19,9 @@ from ._literals import L_6Hours
 from ._literals import L_CMEMS_export_format
 from ._literals import L_Days
 from ._literals import L_ECMWF_Variables
-from ._literals import L_ERA5_sflux_groups
 from ._literals import L_ERA5_Variables
 from ._literals import L_Months
+from ._literals import L_sflux_groups
 from ._literals import Lon_Convention
 from ._literals import PadMethodLat
 from ._literals import PadMethodLon
@@ -42,12 +42,14 @@ if "meluxina" in _HOSTNAME:
     _SCRATCH_DIR = pathlib.Path(f"/project/scratch/p{_GROUP_ID}")
     _default_cache_dir = _SCRATCH_DIR / "cache"
     _default_ecmwf_dir = _PROJECT_DIR / "02_meteo/ecmwf/"
+    _default_ecmwf_operational_dir = _PROJECT_DIR / "02_meteo/ope_ecmwf/"
     _default_hycom_dir = _PROJECT_DIR / "02_meteo/hycom/"
     _default_cmems_dir = _PROJECT_DIR / "02_meteo/cmems/"
     _default_era5_dir = _PROJECT_DIR / "02_meteo/era5/"
 else:
     _default_cache_dir = platformdirs.user_cache_path()
     _default_ecmwf_dir = pathlib.Path(os.environ.get("ECMWF_DIR", "ecmwf"))
+    _default_ecmwf_operational_dir = pathlib.Path(os.environ.get("ECMWF_DIR", "ope_ecmwf"))
     _default_hycom_dir = pathlib.Path(os.environ.get("HYCOM_DIR", "hycom"))
     _default_cmems_dir = pathlib.Path(os.environ.get("CMEMS_DIR", "cmems"))
     _default_era5_dir = pathlib.Path(os.environ.get("ERA5_DIR", "era5"))
@@ -55,7 +57,7 @@ else:
 _DEFAULT_ERA5_DIR = _default_era5_dir
 _DEFAULT_ECMWF_DIR = _default_ecmwf_dir
 _DEFAULT_HYCOM_DIR = _default_hycom_dir
-_DEFAULT_ECMWF_OPERATIONAL_DIR = _DEFAULT_ECMWF_DIR / "operational/O1280"
+_DEFAULT_ECMWF_OPERATIONAL_DIR = _default_ecmwf_operational_dir
 _DEFAULT_CMEMS_DIR = _default_cmems_dir
 _DEFAULT_CACHE_DIR = _default_cache_dir
 _DEFAULT_CACHE_MIR_DIR = _DEFAULT_CACHE_DIR / "mir"
@@ -68,7 +70,7 @@ def cli_download_o1280(
     year: Annotated[int, _YEAR_VALIDATOR],
     month: L_Months,
     variable: L_ECMWF_Variables,
-    output_dir: ResolvedDirectory = _DEFAULT_ECMWF_OPERATIONAL_DIR,
+    output_dir: ResolvedDirectory = _DEFAULT_ECMWF_OPERATIONAL_DIR / "O1280",
     no_steps: int = 12,
 ) -> None:
     """
@@ -261,9 +263,48 @@ def cli_convert_o1280_to_f1280(
     )
 
 
-def cli_convert_f1280_to_sflux():
-    """Convert F1280 grib files sflux netcdf files"""
-    raise NotImplementedError
+def cli_convert_f1280_to_sflux(
+    *,
+    group: L_sflux_groups,
+    year: Annotated[int, _YEAR_VALIDATOR],
+    month: L_Months,
+    f1280_dir: ResolvedExistingDirectory = _DEFAULT_ECMWF_OPERATIONAL_DIR / "F1280",
+    output_dir: Path = _DEFAULT_ECMWF_OPERATIONAL_DIR / "F1280" / "sflux",
+    overwrite: Annotated[bool, Parameter(negative=False)] = False,
+):
+    """
+    Convert F1280 GRIB files to SCHISM sflux files.
+
+    By specifying the variable `group` (air, rad, prc), the `year` and `month`,
+    the corresponding F1280 GRIB files necessary for group are mapped and merged into a single NetCDF.
+
+    The program returns an error if any of the required files is missing.
+
+    Parameters
+    ----------
+    group : str
+        Variable group to convert: 'air', 'rad', or 'prc'.
+    year : int
+        Year of the data.
+    month : int
+        Month of the data (1-12).
+    f1280_dir : Path
+        Base F1280 directory containing grib/{year}/ subdirectories.
+    output_dir : Path
+        Output directory for sflux NetCDF files.
+    overwrite : bool
+        Whether to overwrite existing output files.
+    """
+    from meteo._sflux import f1280_to_sflux
+
+    f1280_to_sflux(
+        group=group,
+        year=year,
+        month=month,
+        f1280_dir=f1280_dir,
+        output_dir=output_dir,
+        overwrite=overwrite,
+    )
 
 
 def cli_download_era5(
@@ -344,7 +385,7 @@ def cli_download_era5(
 def cli_convert_era5_to_sflux(
     *,
     file: Annotated[Path, Parameter(validator=validators.Path(exists=True, file_okay=True, dir_okay=False))],
-    group: L_ERA5_sflux_groups,
+    group: L_sflux_groups,
     output_dir: Path = _DEFAULT_ERA5_DIR / "sflux",
     overwrite: Annotated[bool, Parameter(negative=False)] = False,
 ):
