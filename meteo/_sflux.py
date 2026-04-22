@@ -128,7 +128,7 @@ def _get_f1280(files: xr.Dataset, group: str):
         else:
             grib_ds = xr.open_dataset(file_by_var[grib_var])
         if is_accumulated:
-            grib_ds = grib_ds.diff(dim="step")
+            grib_ds = grib_ds.diff(dim="step", label="lower")
         grib_ds = grib_ds.load() # materialize before reindexing (cfgrib vectorized indexing blows up the memory)
         grib_ds = stack_step_time(grib_ds)
         grib_ds = auto_pad_lon(grib_ds, method_longitude="auto")
