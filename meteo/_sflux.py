@@ -47,20 +47,20 @@ def get_base_sflux_ds(grib_ds: xr.Dataset):
 
 def compute_spfh(ds: xr.Dataset) -> xr.DataArray:
     """
-    Compute specific humidity (sh2) from 2m dewpoint temperature and mean sea level pressure.
+    Compute specific humidity (sh2) from 2m dewpoint temperature and surface pressure.
 
     Uses Bolton (1980) vapor pressure formula and standard specific humidity derivation:
         e1   = 6.112 * exp((17.67 * Td) / (Td + 243.5))    [hPa] - Bolton, Monthly Weather Review 108, 1046-1053
         spfh = (0.622 * e) / (P_hPa - 0.378 * e)           [kg/kg] - from ideal gas law; ε = Mw/Md = 18.015/28.964 ≈ 0.622
     """
     var = list(ds.variables)
-    if "d2m" not in var or "msl" not in var:
-        raise ValueError("Skipping: Both 'd2m' and 'msl' variables are required to compute specific humidity.")
+    if "d2m" not in var or "sp" not in var:
+        raise ValueError("Skipping: Both 'd2m' and 'sp' variables are required to compute specific humidity.")
     d2m = ds['d2m'] # 2m dewpoint temperature in Kelvin
-    msl = ds['msl'] # mean sea level pressure in Pa -> convert to hPa
+    psr = ds['sp'] * 0.01 # surface pressure in Pa -> convert to hPa
     Td = d2m - 273.15
     e1 = 6.112*np.exp((17.67*Td)/(Td + 243.5))
-    spfh = (0.622*e1)/(msl*0.01 - (0.378*e1))
+    spfh = (0.622*e1)/(psr - (0.378*e1))
     ds["sh2"] = spfh
     return ds
 
@@ -114,12 +114,12 @@ def _get_f1280(files: xr.Dataset, group: str):
     is_accumulated = group in ["prc", "rad"]
 
     if group == "air" and "sh2" not in file_by_var:
-        logger.info("'sh2' file not found, computing from '2d' and 'msl'")
+        logger.info("'sh2' file not found, computing from '2d' and 'sp'")
         ds_2d = xr.open_dataset(file_by_var["2d"])
-        ds_msl = xr.open_dataset(file_by_var["msl"])
-        merged = xr.merge([ds_2d, ds_msl], compat="override")
+        ds_psr = xr.open_dataset(file_by_var["sp"])
+        merged = xr.merge([ds_2d, ds_psr], compat="override")
         sh2_ds = compute_spfh(merged)[["sh2"]]
-        del ds_2d, ds_msl, merged
+        del ds_2d, ds_psr, merged
 
     datasets_ = []
     for grib_var, schism_var in var_map.items():
@@ -222,9 +222,9 @@ def f1280_to_sflux(
             missing.append(var)
 
     if "sh2" in missing:
-        logger.info("'sh2' file not found, will attempt to compute from '2d' and 'msl'")
+        logger.info("'sh2' file not found, will attempt to compute from '2d' and 'sp'")
         missing.remove("sh2")
-        for fallback_var in ["2d", "msl"]:
+        for fallback_var in ["2d", "sp"]:
             fb_path = f1280_dir / get_grib_path(fallback_var, year, month, "F1280")
             if not fb_path.exists():
                 raise FileNotFoundError(

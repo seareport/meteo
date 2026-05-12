@@ -10,6 +10,7 @@ SUPPORTED_ERA5_VARIABLES: tuple[L_ERA5_Variables] = get_args(L_ERA5_Variables)
 ECMWF_VARIABLE_CODES = {
     # info on parameter codes: https://codes.ecmwf.int/grib/param-db/
     # (code, is_accumulated)
+    "sp": (134, False),
     "msl": (151, False),
     "u10": (165, False),
     "v10": (166, False),
