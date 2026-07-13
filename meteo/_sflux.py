@@ -79,6 +79,7 @@ def stack_step_time(ds: xr.Dataset) -> xr.Dataset:
             results.append(sel)
 
     ds_out = xr.concat(results, dim="time", coords="all")
+    ds_out = ds_out.dropna(dim="time", how="all")   # drop init/step combos with no GRIB message
     return ds_out.transpose("time", "latitude", "longitude")
 
 
@@ -100,7 +101,9 @@ def _get_era5(grib_ds: xr.Dataset, group: str):
     if group in ["prc", "rad"]:
         grib_ds = stack_step_time(grib_ds)
     if "sh2" in var_map:
+        grib_ds = grib_ds.rename({"msl": "sp"})
         grib_ds = compute_spfh(grib_ds)
+        grib_ds = grib_ds.rename({"sp": "msl"})
 
     datasets = [get_sflux_ds(grib_ds, g, s) for g, s in var_map.items()]
     merged = xr.merge(datasets, compat="override")
