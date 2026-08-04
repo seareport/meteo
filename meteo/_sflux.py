@@ -68,7 +68,11 @@ def compute_spfh(ds: xr.Dataset) -> xr.DataArray:
 def stack_step_time(ds: xr.Dataset) -> xr.Dataset:
     times = ds.time.values
     steps = ds.step.values
-    valid_times = (times[:, None] + steps[None, :]).ravel()
+    # for averaged variables, the averaging processing has been done for the hour prior.
+    # so it makes more sense to set the valid time to the middle of the hour, i.e. 30 minutes earlier than the end of the step
+    # see https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=overview for ERA5
+    # see https://confluence.ecmwf.int/spaces/CKB/pages/76414402/ERA5+data+documentation#ERA5:datadocumentation-Meanrates/fluxesandaccumulations for ECMWF
+    valid_times = (times[:, None] + steps[None, :]).ravel() - pd.Timedelta(minutes=30)
 
     results = []
     for t in range(ds.sizes["time"]):
