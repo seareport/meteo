@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 from __future__ import annotations
 
-import calendar
 import datetime
 import logging
 import pathlib
@@ -12,35 +11,35 @@ from ._literals import L_ECMWF_Variables
 from ._literals import L_ERA5_Avg_Variables
 from ._literals import L_ERA5_Instant_Variables
 from ._literals import L_ERA5_Variables
-from ._literals import L_Grids
-from ._literals import L_Months
 from ._utils import compute_duration_tag
-from ._utils import get_grib_path
+from ._utils import get_grib_name
+from ._utils import inclusive_to_exclusive
 
 logger = logging.getLogger(__name__)
 
+O1280_NO_STEPS = 12
 
-def download_o1280_month(
+
+def download_o1280(
     variable: L_ECMWF_Variables,
-    year: int,
-    month: L_Months,
-    output_path: pathlib.Path,
-    no_steps: int = 12,
+    start_date: datetime.datetime,
+    end_date: datetime.datetime,
+    output_dir: pathlib.Path,
 ) -> None:
     logger.debug("Downloading O1280: %s", locals())
     from ecmwfapi import ECMWFService
 
-    filepath = output_path / get_grib_path(variable, year, month, "O1280")
+    end_date_inclusive = inclusive_to_exclusive(end_date)
+    if end_date_inclusive < start_date:
+        raise ValueError(f"Date range is empty: {start_date} to {end_date} (exclusive)")
+
+    filepath = output_dir / get_grib_name(variable, start_date, end_date, "O1280")
     logger.debug("Saving to: %s", filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
 
-    _, no_days_in_month = calendar.monthrange(year, month)
-    d1 = f"{year:04d}{month:02d}01"
-    d2 = f"{year:04d}{month:02d}{no_days_in_month:2d}"
-
     code, is_accumulated = ECMWF_VARIABLE_CODES[variable]
-    if is_accumulated:
-        no_steps += 1
+    # 12h forecasts from 00/12 UTC; accumulated variables need one extra step to difference
+    no_steps = O1280_NO_STEPS + 1 if is_accumulated else O1280_NO_STEPS
     step = "/".join(map(str, range(no_steps)))
 
     server = ECMWFService("mars")
@@ -53,7 +52,7 @@ def download_o1280_month(
             'step'      : step,
             'area'      : "90.0/-180.0/-90.0/180.0",
             'grid'      : "O1280",
-            'date'      : f"{d1}/to/{d2}",
+            'date'      : f"{start_date:%Y%m%d}/to/{end_date_inclusive:%Y%m%d}",
             'time'      : "00/12",
             'type'      : "fc",
             'class'     : "od",
@@ -97,7 +96,6 @@ def download_era5(
     """
     logger.debug("Downloading ERA5: %s", locals())
     from ecmwf.datastores import Client
-    from meteo._utils import inclusive_to_exclusive
 
     output_dir.mkdir(parents=True, exist_ok=True)
     client = Client()

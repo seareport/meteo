@@ -11,21 +11,17 @@ from isoduration.types import TimeDuration
 
 from ._literals import L_ECMWF_Variables
 from ._literals import L_Grids
-from ._literals import L_Months
 
 logger = logging.getLogger(__name__)
 
 CANDIDATES_LON = ["x", "lon", "longitude", "xlon", "nav_lon", "glamt", "glamf", "lon_rho"]
 CANDIDATES_LAT = ["y", "lat", "latitude", "ylat", "nav_lat", "gphit", "gphif", "lat_rho"]
 
-def get_grib_path(variable: L_ECMWF_Variables, year: int, month: L_Months, grid: L_Grids) -> str:
-    # XXX: If this path structure changes, update the docstring examples in:
-    #      - cli_download_o1280() in _cli.py
-    #      - cli_convert_o1280_to_f1280() in _cli.py
-    #      - download_o1280_month() in _ecmwf.py
+def get_grib_name(variable: L_ECMWF_Variables, start: datetime.datetime, end: datetime.datetime, grid: L_Grids) -> str:
+    # XXX: If this naming changes, update the docstring examples in:
+    #      - cli_download_o1280(), cli_convert_o1280_to_f1280(), cli_convert_f1280_to_sflux() in _cli.py
     #      - f1280_to_sflux() in _sflux.py
-    path = f"grib/{year}/{grid[0].lower()}.{year}.{month:02d}.{variable}.grib"
-    return path
+    return f"grib/{start.year}/{grid.lower()}_{start:%Y%m%d}_{compute_duration_tag(start, end)}_{variable}.grib"
 
 
 # https://gis.stackexchange.com/questions/201789/verifying-formula-that-will-convert-longitude-0-360-to-180-to-180
@@ -340,3 +336,15 @@ def compute_duration_tag(start: datetime.date, end: datetime.date) -> str:
 
 def inclusive_to_exclusive(date_inclusive: datetime.datetime)-> datetime.datetime:
     return date_inclusive - isoduration.parse_duration("PT1H")
+
+
+def resolve_end_date(
+    start: datetime.datetime,
+    end_date: datetime.datetime | None,
+    duration: str | None,
+) -> datetime.datetime:
+    if duration:
+        return compute_end_date(start, duration)
+    if end_date is None:
+        raise ValueError("Provide either --end-date or --duration")
+    return end_date

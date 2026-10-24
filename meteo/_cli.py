@@ -26,7 +26,7 @@ from ._literals import Lon_Convention
 from ._literals import PadMethodLat
 from ._literals import PadMethodLon
 from ._literals import PadSideLat
-from ._utils import get_grib_path
+from ._utils import get_grib_name
 
 _HOSTNAME = platform.node()
 
@@ -67,50 +67,61 @@ _YEAR_VALIDATOR = Parameter(validator=validators.Number(gte=1900))
 _TIME_RANGE_VALIDATOR = Group("Time range", validator=validators.MutuallyExclusive())
 
 def cli_download_o1280(
-    year: Annotated[int, _YEAR_VALIDATOR],
-    month: L_Months,
+    *,
+    start_date: datetime.datetime,
     variable: L_ECMWF_Variables,
+    duration: Annotated[str, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
+    end_date: Annotated[datetime.datetime, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
     output_dir: ResolvedDirectory = _DEFAULT_ECMWF_OPERATIONAL_DIR / "O1280",
-    no_steps: int = 12,
 ) -> None:
     """
     Download ECMWF operational forecast data on the O1280 octahedral Gaussian grid.
 
     Downloads high-resolution (~9km) ECMWF operational forecast data in GRIB format
-    for a specified month. Requires ECMWF API credentials in `~/.ecmwfapirc`.
+    (one MARS request per variable). Requires ECMWF API credentials in `~/.ecmwfapirc`.
+
+    Time range
+    ----------
+     * ``--start-date`` is the first day of data to download.
+     * ``--end-date`` is **exclusive**: data up to (but not including) that date is downloaded.
+     * Instead of ``--end-date``, you can pass ``--duration`` as an ISO 8601 string. The exclusive end date is then computed as ``start_date + duration``.
+
+    Examples
+    ---------
+    The following command is the same:
+    ```
+    meteo download o1280 --variable msl --start-date 20240101 --end-date 20240201   # all of January 2024
+    meteo download o1280 --variable msl --start-date 20240101 --duration P1M        # same: 2024-01-01 to 2024-01-31
+    ```
+    and creates the output file:
+     * ``{output_dir}/o1280_20240101_P31D_msl.grib``
 
     Parameters
     ----------
-    year : int
-        Year to download (must be >= 1900).
-    month : int
-        Month to download (1-12).
+    start_date : datetime.datetime
+        Start date in YYYYMMDD format
     variable : str
         ECMWF variable code. Supported variables include: 'msl' (mean sea level
         pressure), 'u10'/'v10' (10m wind components), 't2m' (2m temperature),
         'sh2' (2m specific humidity), 'ssrd'/'strd' (surface radiation), 'tp'
         (total precipitation).
+    end_date : datetime.datetime
+        Last day of data to download, **exclusive** (YYYYMMDD format).
+        Cannot be called if ``duration`` is provided.
+    duration : str
+        ISO 8601 string for period to download (e.g., `PnD`, `PnW`, `PnM`, `PnY` and combinations like `P1M15D`).
+        Cannot be called if ``end_date`` is provided.
     output_dir : Path, default: system-specific
-        Output directory for downloaded files. Data is saved to an 'O1280'
-        subdirectory within this path. Defaults to a platform-specific location.
-    no_steps : int, default: 12
-        Number of forecast time steps to download. Automatically incremented by
-        one for accumulated variables (e.g., precipitation, radiation).
-
-    Notes
-    -----
-    Output files follow a standardized naming convention within the O1280 subdirectory.
-    For example, downloading mean sea level pressure for January 2024 creates:
-    ``{output_dir}/O1280/grib/2024/o.2024.01.msl.grib``
+        Output directory for downloaded files. Defaults to a platform-specific location.
     """
-    from meteo._ecmwf import download_o1280_month
+    from meteo._ecmwf import download_o1280
+    from meteo._utils import resolve_end_date
 
-    download_o1280_month(
+    download_o1280(
         variable=variable,
-        year=year,
-        month=month,
-        output_path=output_dir,
-        no_steps=no_steps,
+        start_date=start_date,
+        end_date=resolve_end_date(start_date, end_date, duration),
+        output_dir=output_dir,
     )
 
 
@@ -202,9 +213,11 @@ def cli_convert_pad(
 
 
 def cli_convert_o1280_to_f1280(
-    year: Annotated[int, _YEAR_VALIDATOR],
-    month: L_Months,
+    *,
+    start_date: datetime.datetime,
     variable: L_ECMWF_Variables,
+    duration: Annotated[str, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
+    end_date: Annotated[datetime.datetime, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
     ecmwf_operational_dir: ResolvedExistingDirectory = _DEFAULT_ECMWF_OPERATIONAL_DIR,
     mir_cache_path: ResolvedDirectory = _DEFAULT_CACHE_MIR_DIR,
     metview_tmp_path: ResolvedDirectory = _DEFAULT_CACHE_METVIEW_DIR,
@@ -220,15 +233,19 @@ def cli_convert_o1280_to_f1280(
 
     Parameters
     ----------
-    year : int
-        Year of the data to convert (must be >= 1900).
-    month : int
-        Month of the data to convert (1-12).
+    start_date : datetime.datetime
+        Start date of the downloaded data in YYYYMMDD format.
     variable : str
         ECMWF variable code. Supported variables include: 'msl' (mean sea level
         pressure), 'u10'/'v10' (10m wind components), 't2m' (2m temperature),
         'sh2' (2m specific humidity), 'ssrd'/'strd' (surface radiation), 'tp'
         (total precipitation).
+    end_date : datetime.datetime
+        Last day of the downloaded data, **exclusive** (YYYYMMDD format).
+        Cannot be called if ``duration`` is provided.
+    duration : str
+        ISO 8601 string for the downloaded period (e.g. `P1M`).
+        Cannot be called if ``end_date`` is provided.
     ecmwf_operational_dir : Path, default: system-specific
         Base directory containing 'O1280' (input) and 'F1280' (output) subdirectories.
         The O1280 directory must exist and contain the input GRIB file.
@@ -243,17 +260,21 @@ def cli_convert_o1280_to_f1280(
     Notes
     -----
     Input and output file paths are determined automatically based on the variable,
-    year, and month. For example, converting mean sea level pressure for January 2024:
+    start date and period (same convention as ``meteo download o1280``).
+    For example, converting mean sea level pressure for January 2024 (``--start-date 20240101 --duration P1M``):
 
-    - Input: ``{ecmwf_operational_dir}/O1280/grib/2024/o.2024.01.msl.grib``
-    - Output: ``{ecmwf_operational_dir}/F1280/grib/2024/f.2024.01.msl.grib``
+    - Input: ``{ecmwf_operational_dir}/O1280/o1280_20240101_P31D_msl.grib``
+    - Output: ``{ecmwf_operational_dir}/F1280/f1280_20240101_P31D_msl.grib``
 
     The output F1280 directory is created if it doesn't exist.
     """
     from meteo._convert import o1280_to_f1280
 
-    o1280_path = ecmwf_operational_dir / "O1280" / get_grib_path(variable, year, month, "O1280")
-    f1280_path = ecmwf_operational_dir / "F1280" / get_grib_path(variable, year, month, "F1280")
+    from meteo._utils import resolve_end_date
+
+    end_date = resolve_end_date(start_date, end_date, duration)
+    o1280_path = ecmwf_operational_dir / "O1280" / get_grib_name(variable, start_date, end_date, "O1280")
+    f1280_path = ecmwf_operational_dir / "F1280" / get_grib_name(variable, start_date, end_date, "F1280")
     o1280_to_f1280(
         o1280_path=o1280_path,
         f1280_path=f1280_path,
@@ -266,8 +287,9 @@ def cli_convert_o1280_to_f1280(
 def cli_convert_f1280_to_sflux(
     *,
     group: L_sflux_groups,
-    year: Annotated[int, _YEAR_VALIDATOR],
-    month: L_Months,
+    start_date: datetime.datetime,
+    duration: Annotated[str, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
+    end_date: Annotated[datetime.datetime, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
     f1280_dir: ResolvedExistingDirectory = _DEFAULT_ECMWF_OPERATIONAL_DIR / "F1280",
     output_dir: Path = _DEFAULT_ECMWF_OPERATIONAL_DIR / "F1280" / "sflux",
     overwrite: Annotated[bool, Parameter(negative=False)] = False,
@@ -275,7 +297,7 @@ def cli_convert_f1280_to_sflux(
     """
     Convert F1280 GRIB files to SCHISM sflux files.
 
-    By specifying the variable `group` (air, rad, prc), the `year` and `month`,
+    By specifying the variable `group` (air, rad, prc) and the period (`start_date` with `end_date` or `duration`),
     the corresponding F1280 GRIB files necessary for group are mapped and merged into a single NetCDF.
 
     The program returns an error if any of the required files is missing.
@@ -284,23 +306,28 @@ def cli_convert_f1280_to_sflux(
     ----------
     group : str
         Variable group to convert: 'air', 'rad', or 'prc'.
-    year : int
-        Year of the data.
-    month : int
-        Month of the data (1-12).
+    start_date : datetime.datetime
+        Start date of the downloaded data in YYYYMMDD format.
+    end_date : datetime.datetime
+        Last day of the downloaded data, **exclusive** (YYYYMMDD format).
+        Cannot be called if ``duration`` is provided.
+    duration : str
+        ISO 8601 string for the downloaded period (e.g. `P1M`).
+        Cannot be called if ``end_date`` is provided.
     f1280_dir : Path
-        Base F1280 directory containing grib/{year}/ subdirectories.
+        F1280 directory containing the ``f1280_{start}_{duration}_{variable}.grib`` files.
     output_dir : Path
         Output directory for sflux NetCDF files.
     overwrite : bool
         Whether to overwrite existing output files.
     """
     from meteo._sflux import f1280_to_sflux
+    from meteo._utils import resolve_end_date
 
     f1280_to_sflux(
         group=group,
-        year=year,
-        month=month,
+        start_date=start_date,
+        end_date=resolve_end_date(start_date, end_date, duration),
         f1280_dir=f1280_dir,
         output_dir=output_dir,
         overwrite=overwrite,
@@ -332,6 +359,7 @@ def cli_download_era5(
 
     Time range
     ----------
+     * ERA5 is available from 1940-01-01 until ~5 days before today (ERA5T preliminary data, near-real-time latency).
      * ``--start-date`` is the first day of data to download.
      * ``--end-date`` is **exclusive**: data up to (but not including) that date is downloaded.
      * All hourly timesteps (00:00–23:00) of each included day are retrieved.

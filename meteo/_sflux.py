@@ -1,4 +1,5 @@
 import calendar
+import datetime
 import itertools
 import logging
 from pathlib import Path
@@ -14,7 +15,8 @@ from ._constants import ERA5_SFLUX_MAPPING
 from ._constants import F1280_SFLUX_MAPPING
 from ._utils import auto_pad_lat
 from ._utils import auto_pad_lon
-from ._utils import get_grib_path
+from ._utils import compute_duration_tag
+from ._utils import get_grib_name
 from ._utils import write_file
 
 logger = logging.getLogger(__name__)
@@ -47,11 +49,11 @@ def get_base_sflux_ds(grib_ds: xr.Dataset):
 
 def compute_spfh(ds: xr.Dataset) -> xr.DataArray:
     """
-    Compute specific humidity (sh2) from 2m dewpoint temperature and surface pressure.
+    Compute specific humidity (sh2) from 2m dewpoint temperature ('d2m', K) and surface pressure ('sp', Pa).
 
     Uses Bolton (1980) vapor pressure formula and standard specific humidity derivation:
-        e1   = 6.112 * exp((17.67 * Td) / (Td + 243.5))    [hPa] - Bolton, Monthly Weather Review 108, 1046-1053
-        spfh = (0.622 * e) / (P_hPa - 0.378 * e)           [kg/kg] - from ideal gas law; ε = Mw/Md = 18.015/28.964 ≈ 0.622
+        e1   = 6.112 * exp((17.67 * Td) / (Td + 243.5))    [hPa] - Td in °C; Bolton, Monthly Weather Review 108, 1046-1053
+        spfh = (0.622 * e1) / (P_hPa - 0.378 * e1)         [kg/kg] - from ideal gas law; ε = Mw/Md = 18.015/28.964 ≈ 0.622
     """
     var = list(ds.variables)
     if "d2m" not in var or "sp" not in var:
@@ -192,8 +194,8 @@ def era5_to_sflux(file: Path, group: str, output_dir: Path, overwrite: bool) -> 
 
 def f1280_to_sflux(
     group: str,
-    year: int,
-    month: int,
+    start_date: datetime.datetime,
+    end_date: datetime.datetime,
     f1280_dir: Path,
     output_dir: Path,
     overwrite: bool,
@@ -202,7 +204,7 @@ def f1280_to_sflux(
     Convert per-variable F1280 GRIB files to SCHISM sflux NetCDF.
 
     The files needed for the F1280 GRIB files are:
-        * For 'air': [msl, u10, v10, t2m, sh2 (or 2d+msl)]
+        * For 'air': [msl, u10, v10, t2m, sh2 (or 2d+sp)]
         * For 'rad': [ssrd, strd]
         * For 'prc': [tp]
 
@@ -210,10 +212,10 @@ def f1280_to_sflux(
     ----------
     group : str
         Variable group: 'air', 'rad', or 'prc'.
-    year : int
-        Year of the data to process.
-    month : int
-        Month of the data to process.
+    start_date : datetime.datetime
+        Start date of the downloaded data.
+    end_date : datetime.datetime
+        End of the downloaded data, **exclusive**.
     output_dir : Path
         Output directory for sflux NetCDF files.
     overwrite : bool
@@ -224,7 +226,7 @@ def f1280_to_sflux(
     files = []
     missing = []
     for var in variables:
-        fpath = f1280_dir / get_grib_path(var, year, month, "F1280")
+        fpath = f1280_dir / get_grib_name(var, start_date, end_date, "F1280")
         if fpath.exists():
             files.append(fpath)
         else:
@@ -234,11 +236,11 @@ def f1280_to_sflux(
         logger.info("'sh2' file not found, will attempt to compute from '2d' and 'sp'")
         missing.remove("sh2")
         for fallback_var in ["2d", "sp"]:
-            fb_path = f1280_dir / get_grib_path(fallback_var, year, month, "F1280")
+            fb_path = f1280_dir / get_grib_name(fallback_var, start_date, end_date, "F1280")
             if not fb_path.exists():
                 raise FileNotFoundError(
                     f"Neither 'sh2' nor '{fallback_var}' found in {fb_path}. "
-                    "Need either 'sh2' directly or both '2d' and 'msl' to compute it."
+                    "Need either 'sh2' directly or both '2d' and 'sp' to compute it."
                 )
             if fb_path not in files:
                 files.append(fb_path)
@@ -250,7 +252,7 @@ def f1280_to_sflux(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     schism_ds = _get_f1280(files, group)
-    filename = output_dir / f"sflux_F1280.{year}.{month:02d}_{group}.nc"
+    filename = output_dir / f"sflux_f1280_{start_date:%Y%m%d}_{compute_duration_tag(start_date, end_date)}_{group}.nc"
 
     base_date = schism_ds.time.attrs["base_date"]
     encoding = {
