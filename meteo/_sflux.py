@@ -119,7 +119,7 @@ def _get_era5(grib_ds: xr.Dataset, group: str):
 
 def _get_f1280(files: xr.Dataset, group: str):
     var_map = F1280_SFLUX_MAPPING[group]
-    file_by_var = {f.stem.split(".")[-1]: f for f in files}
+    file_by_var = {f.stem.split("_")[-1]: f for f in files}
     is_accumulated = group in ["prc", "rad"]
 
     if group == "air" and "sh2" not in file_by_var:
