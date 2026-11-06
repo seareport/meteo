@@ -50,8 +50,13 @@ jobs:
           echo "PATH=$PATH"
           which -a python3.13 python3 python || true
           python3.13 -VV || true
-          head -1 "$(which poetry)" || true
-          poetry debug 2>&1 | head -20 || true
+          POETRY_PY=/opt/pipx/venvs/poetry/bin/python
+          $POETRY_PY -VV || true
+          $POETRY_PY -m virtualenv --no-download --no-periodic-update --no-pip --no-setuptools --no-wheel \
+            --try-first-with "$(readlink -f "$(which python3.13)")" /tmp/vtest || true
+          /tmp/vtest/bin/python -VV || true
+          poetry env use python${{ env.PYTHON_VERSION }} -vvv 2>&1 | head -30 || true
+          .venv/bin/python -VV || true
 
       - name: Install meteo
         run: |
