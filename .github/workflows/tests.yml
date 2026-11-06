@@ -48,6 +48,7 @@ jobs:
       - name: Install meteo
         run: |
           poetry config virtualenvs.in-project true
+          poetry env use python${{ env.PYTHON_VERSION }}
           poetry install --with test --extras sflux
 
       - name: Unit tests (e2e skipped)
@@ -79,6 +80,7 @@ jobs:
       - name: Install meteo
         run: |
           poetry config virtualenvs.in-project true
+          poetry env use python${{ env.PYTHON_VERSION }}
           poetry install --with test --extras sflux
 
       # reuse the N320 source files between runs to skip the CDS queue (bump the key to force a fresh download)
@@ -125,6 +127,7 @@ jobs:
       - name: Install meteo
         run: |
           poetry config virtualenvs.in-project true
+          poetry env use python${{ env.PYTHON_VERSION }}
           poetry install --with test --extras sflux
 
       # ~1 GB of reference sflux files (shared with the e2e job); the MARS downloads are deleted by the test, not cached
