@@ -45,6 +45,14 @@ jobs:
       - name: Install poetry
         run: pipx install "poetry==${POETRY_VERSION}"
 
+      - name: Debug python resolution (temporary)
+        run: |
+          echo "PATH=$PATH"
+          which -a python3.13 python3 python || true
+          python3.13 -VV || true
+          head -1 "$(which poetry)" || true
+          poetry debug 2>&1 | head -20 || true
+
       - name: Install meteo
         run: |
           poetry config virtualenvs.in-project true
