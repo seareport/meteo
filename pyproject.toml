@@ -12,15 +12,19 @@ dependencies = [
     "cyclopts",
     "logfmter",
     "ecmwf-api-client",
-    "metview",
+    "cdsapi",
+    "earthkit-geo",
+    "earthkit-data",
     "platformdirs",
     "cf-xarray",
+    "isoduration",
 ]
 
 [project.optional-dependencies]
 hycom = ["gsw", "netcdf4"]
-complete = ["gsw", "netcdf4", "copernicusmarine"]
+complete = ["gsw", "netcdf4", "copernicusmarine", "cfgrib", "earthkit-geo"]
 cmems = ["copernicusmarine"]
+sflux = ["cfgrib"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
@@ -28,6 +32,13 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.group.dev.dependencies]
 ipython = "*"
+ipykernel = "^7.4.0"
+
+[tool.poetry.group.test.dependencies]
+pytest = "9.2.0"
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
 
 [tool.poetry.scripts]
 meteo = "meteo.__main__:main"
