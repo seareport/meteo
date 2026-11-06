@@ -3,7 +3,7 @@
 Guidance for coding agents working on this repo. User-facing docs are in `README.md`; the decision log is in `DECISIONS.md` (read it before changing CLI names, grids or file naming).
 
 ## Layout
-- `meteo/__main__.py`: cyclopts app (`meteo download …`, `meteo convert …`) mapping commands to `_cli.py`.
+- `meteo/__main__.py`: cyclopts app (`meteo download …`, `meteo convert …`) mapping commands to `_cli.py`. Global flags (e.g. `--log-level`/`-l`, env `METEO_LOG_LEVEL`) live on the meta app (`main_app.meta.default`); `main()` calls `main_app.meta()`.
 - `meteo/_cli.py`: thin CLI wrappers. Imports are lazy (inside functions), and the docstrings are the `--help` text, so keep them in sync with behaviour.
 - `meteo/_ecmwf.py`: ERA5 (earthkit-data `cds` source) and MARS downloads.
 - `meteo/_convert.py`: `regrid` (file level) and `regrid_dataset` (lazy dask MIR regrid onto rectilinear grids), plus lon normalisation and padding.

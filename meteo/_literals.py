@@ -32,6 +32,8 @@ L_ERA5_Avg_Variables = Literal[
 
 L_sflux_groups = Literal["air", "rad", "prc"]
 
+L_LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
+
 L_CMEMS_Dataset = Literal[
     "cmems_mod_glo_phy", # Global Ocean Physics Analysis and Forecast
     # "cmems_mod_glo_wav", # Global Ocean Waves Analysis and Forecast
