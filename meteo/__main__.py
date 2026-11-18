@@ -52,7 +52,7 @@ def _setup_logging(level: str) -> None:
 
 @main_app.meta.default
 def _main_meta(
-    *tokens: Annotated[str, Parameter(show=False)],
+    *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
     log_level: Annotated[
         L_LogLevel, Parameter(name=["--log-level", "-l"], env_var="METEO_LOG_LEVEL", help="Root logger level")
     ] = "DEBUG",
