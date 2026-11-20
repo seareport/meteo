@@ -13,7 +13,6 @@ from cyclopts import Group
 from cyclopts import Parameter
 from cyclopts import validators
 from cyclopts.types import ResolvedDirectory
-from cyclopts.types import ResolvedExistingDirectory
 
 from ._literals import L_6Hours
 from ._literals import L_CMEMS_export_format
@@ -290,7 +289,8 @@ def cli_convert_mars_to_sflux(
     start_date: datetime.datetime,
     duration: Annotated[str, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
     end_date: Annotated[datetime.datetime, Parameter(group=_TIME_RANGE_VALIDATOR)] | None = None,
-    input_dir: ResolvedExistingDirectory = _DEFAULT_ECMWF_OPERATIONAL_DIR,
+    # not ResolvedExistingDirectory: cyclopts validates the default before reporting unknown options
+    input_dir: ResolvedDirectory = _DEFAULT_ECMWF_OPERATIONAL_DIR,
     output_dir: Path = _DEFAULT_ECMWF_OPERATIONAL_DIR / "sflux",
     out_grid: str | None = None,
     mir_cache_path: ResolvedDirectory = _DEFAULT_CACHE_DIR,
@@ -338,6 +338,8 @@ def cli_convert_mars_to_sflux(
     from meteo._utils import rectilinear_grid
     from meteo._utils import resolve_end_date
 
+    if not input_dir.is_dir():
+        raise NotADirectoryError(f"--input-dir does not exist: {input_dir}")
     mars_to_sflux(
         group=group,
         start_date=start_date,
