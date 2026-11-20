@@ -1,0 +1,141 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: "Run the end-to-end ERA5 -> sflux pipeline (CDS download, several GB)"
+        type: boolean
+        default: false
+      e2e_mars:
+        description: "Run the end-to-end MARS O1280 -> F1280 sflux pipeline (MARS download, ~8 GB peak disk)"
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 3 * * 1"  # weekly ERA5 e2e run, Monday 03:00 UTC
+    - cron: "0 4 1 * *"  # monthly MARS e2e run, 1st of the month 04:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.13"
+  POETRY_VERSION: "2.1.2"
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install poetry
+        run: pipx install --python "$pythonLocation/bin/python" "poetry==${POETRY_VERSION}"
+
+      - name: Install meteo
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry env use python${{ env.PYTHON_VERSION }}
+          poetry install --with test --extras sflux
+
+      - name: Unit tests (e2e skipped)
+        run: poetry run pytest -v -rs
+
+  e2e:
+    if: github.event.schedule == '0 3 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.e2e)
+    # N320 download ~6 GB + 0.25 deg/7-day sflux in memory: set the E2E_RUNNER repo variable to use a larger/self-hosted runner
+    runs-on: ${{ vars.E2E_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 360  # CDS reanalysis-era5-complete (MARS tape) requests can queue for hours
+    env:
+      METEO_E2E: "1"
+      METEO_E2E_DIR: ${{ github.workspace }}/../meteo_e2e
+      MIR_CACHE_PATH: ${{ github.workspace }}/../mir_cache
+      CDSAPI_URL: https://cds.climate.copernicus.eu/api
+      CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install poetry
+        run: pipx install --python "$pythonLocation/bin/python" "poetry==${POETRY_VERSION}"
+
+      - name: Install meteo
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry env use python${{ env.PYTHON_VERSION }}
+          poetry install --with test --extras sflux
+
+      # reuse the N320 source files between runs to skip the CDS queue (bump the key to force a fresh download)
+      - name: Cache ERA5 N320 download
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.METEO_E2E_DIR }}/era5
+          key: era5-n320-20200101-P7D-v2
+
+      # ~1 GB of reference sflux files (shared with the e2e-mars job)
+      - name: Cache Zenodo references
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.METEO_E2E_DIR }}/reference
+          key: zenodo-23881590-v1
+
+      - name: End-to-end ERA5 -> sflux
+        run: poetry run pytest -v -rs -s test/test_era5_sflux_e2e.py
+
+  e2e-mars:
+    if: github.event.schedule == '0 4 1 * *' || (github.event_name == 'workflow_dispatch' && inputs.e2e_mars)
+    # one day of F1280 air sflux is ~6.5 GB and is built in memory: a runner with >= 32 GB RAM is advised (E2E_RUNNER)
+    runs-on: ${{ vars.E2E_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 360  # MARS requests can queue for hours
+    env:
+      METEO_E2E_MARS: "1"
+      METEO_E2E_DIR: ${{ github.workspace }}/../meteo_e2e
+      MIR_CACHE_PATH: ${{ github.workspace }}/../mir_cache
+      ECMWF_API_URL: https://api.ecmwf.int/v1
+      ECMWF_API_KEY: ${{ secrets.ECMWF_API_KEY }}
+      ECMWF_API_EMAIL: ${{ secrets.ECMWF_API_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install poetry
+        run: pipx install --python "$pythonLocation/bin/python" "poetry==${POETRY_VERSION}"
+
+      - name: Install meteo
+        run: |
+          poetry config virtualenvs.in-project true
+          poetry env use python${{ env.PYTHON_VERSION }}
+          poetry install --with test --extras sflux
+
+      # ~1 GB of reference sflux files (shared with the e2e job); the MARS downloads are deleted by the test, not cached
+      - name: Cache Zenodo references
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.METEO_E2E_DIR }}/reference
+          key: zenodo-23881590-v1
+
+      - name: End-to-end MARS -> F1280 sflux
+        run: poetry run pytest -v -rs -s test/test_mars_sflux_e2e.py
